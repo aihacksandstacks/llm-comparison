@@ -180,9 +180,45 @@ llm-comparison/
 ├── tests/                   # Test suite
 ├── .env.example             # Example environment variables
 ├── docker-compose.yml       # Docker compose configuration
+├── docker-compose.dev.yml   # Development docker-compose with hot reloading
+├── dev.sh                   # Script to launch dev environment in Docker
+├── run_dev.py               # Script to run app locally with hot reloading
 ├── requirements.txt         # Python dependencies
 └── README.md                # This file
 ```
+
+### Development Mode
+
+There are two ways to run the application in development mode with hot reloading:
+
+#### 1. Using Docker (recommended)
+
+This approach runs everything in containers but still enables hot reloading when you change the code:
+
+```bash
+# Make sure dev.sh is executable
+chmod +x dev.sh
+
+# Run the development environment
+./dev.sh
+```
+
+#### 2. Running Locally
+
+If you prefer to run the Streamlit app directly on your host machine:
+
+```bash
+# Activate your virtual environment
+source .venv/bin/activate
+
+# Install required packages
+pip install -r requirements.txt
+
+# Run the development script
+python run_dev.py
+```
+
+Both methods enable hot reloading, which automatically refreshes the app when you modify the code.
 
 ### Running Tests
 

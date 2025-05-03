@@ -1,0 +1,61 @@
+name: llm-comparison
+version: '3.8'
+
+services:
+  # Vector database for storing embeddings
+  vectordb:
+    image: ankane/pgvector:latest
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-llm_comparison}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - vectordb_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # Web application with development mode enabled
+  webapp:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+      - ~/.streamlit:/root/.streamlit
+    environment:
+      # Database connection (use these for local vectordb)
+      - DB_PROVIDER=${DB_PROVIDER:-postgres}
+      - POSTGRES_HOST=${POSTGRES_HOST:-vectordb}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-llm_comparison}
+      
+      # Supabase connection (use these if DB_PROVIDER=supabase)
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_KEY=${SUPABASE_KEY:-}
+      - SUPABASE_TABLE=${SUPABASE_TABLE:-embeddings}
+      
+      # External Opik connection
+      - OPIK_HOST=${OPIK_HOST:-localhost}
+      - OPIK_PORT=${OPIK_BACKEND_PORT:-8000}
+      
+      # Development mode
+      - STREAMLIT_SERVER_RUN_ON_SAVE=true
+      - STREAMLIT_CLIENT_TOOLBAR_MODE=developer
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+      - STREAMLIT_RUNNER_FAST_RERUNS=true
+      - STREAMLIT_LOGGER_LEVEL=debug
+      - WATCHDOG_TIMEOUT=5
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - vectordb
+    command: >
+      bash -c "pip install watchdog && streamlit run src/features/base_ui/app.py --server.runOnSave=true --server.enableCORS=false --server.enableXsrfProtection=false"
+    restart: unless-stopped
+
+volumes:
+  vectordb_data: 
