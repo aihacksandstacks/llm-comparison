@@ -1,0 +1,93 @@
+# Project Initialization Rules
+
+How to properly initialize or reset projects
+
+## New Project Setup
+
+When initializing a new project or performing a major reset:
+
+1. **Pre-initialization Checklist**
+   - [ ] Backup any essential files (especially `.env`, `.context`, custom configurations)
+   - [ ] Document the current state in `.context/current_state.md`
+   - [ ] Check for existing git configuration
+   - [ ] Verify the target directory status
+
+2. **Temporary Directory Protocol**
+   If using a temporary directory for setup:
+   - Create it OUTSIDE the project directory
+   - Use a consistent naming pattern: `temp-{project-name}-{timestamp}`
+   - Never nest it within the target project
+   - Always clean up after successful transfer
+
+3. **Git Repository Management**
+   - Initialize git AFTER project setup is complete
+   - Follow this sequence:
+     ```bash
+     # 1. Remove existing git if needed
+     rm -rf .git
+     
+     # 2. Initialize new repository
+     git init
+     
+     # 3. Add remote origin
+     git remote add origin {repository-url}
+     
+     # 4. Initial commit
+     git add .
+     git commit -m "Initial project setup"
+     
+     # 5. Force push only if explicitly confirmed
+     git push -f origin main  # Require explicit confirmation
+     ```
+
+4. **File Transfer Protocol**
+   When moving files from temporary to target directory:
+   - Use rsync instead of cp for better control
+   - Preserve specified files/directories
+   - Handle hidden files properly
+   ```bash
+   rsync -av --exclude='.git' --exclude='node_modules' temp-dir/ target-dir/
+   ```
+
+5. **Post-Setup Verification**
+   - [ ] Verify all essential files are present
+   - [ ] Check git configuration
+   - [ ] Validate project structure
+   - [ ] Test basic functionality
+   - [ ] Update project documentation
+
+## Environment-Specific Considerations
+
+- Development:
+  - Preserve local environment configurations
+  - Maintain development-specific tooling
+
+- Production:
+  - Never force push to production branches
+  - Maintain separate configuration files
+  - Document all production-specific settings
+
+## Documentation Requirements
+
+After major project initialization or reset:
+1. Update `.context/current_state.md`
+2. Document decisions in `.context/decisions/`
+3. Update architecture documentation if needed
+4. Record the initialization process in `.context/sessions/`
+
+## Error Prevention
+
+Common pitfalls to avoid:
+- Never delete directories without confirmation
+- Never force push without explicit approval
+- Never overwrite `.env` files automatically
+- Always verify remote repository configuration
+- Always backup critical files before major changes
+
+## Cleanup Protocol
+
+After successful project initialization:
+1. Remove temporary directories
+2. Clear cached files if needed
+3. Document any manual steps required
+4. Verify all backups can be safely removed

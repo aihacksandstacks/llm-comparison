@@ -1,0 +1,46 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+---
+description: Add License Header
+globs: *
+---
+# Add License Header
+
+Automatically add license headers to new files.
+
+<rule>
+name: add_license_header
+description: Automatically add license headers to new files
+filters:
+  - type: file_extension
+    pattern: "*"
+  - type: event
+    pattern: "file_create"
+actions:
+  - type: execute
+    command: "depot-addlicense \"$FILE\""
+  - type: suggest
+    message: |
+      License headers should follow these formats:
+
+      Go files:
+      ```go
+      // Copyright (c) 2025 H2 Digital Solutions <info@h2dsconnect.com>. All rights reserved.
+      ```
+
+      Nix files:
+      ```nix
+      # Copyright (c) 2025 H2 Digital Solutions <info@h2dsconnect.com>. All rights reserved.
+      ```
+
+      Shell files:
+      ```bash
+      # Copyright (c) H2 Digital Solutions <info@h2dsconnect.com>. All rights reserved.
+      ```
+metadata:
+  priority: high
+  version: 1.0
+</rule>

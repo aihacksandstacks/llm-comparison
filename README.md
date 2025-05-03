@@ -1,0 +1,213 @@
+# LLM Comparison Tool
+
+A comprehensive platform for benchmarking and comparing multiple LLM backends under a unified RAG and evaluation framework.
+
+## Overview
+
+The LLM Comparison Tool enables fair comparison of LLMs on custom datasets, supporting RAG-enhanced queries over web-crawled content, PDFs, and code. It provides automated evaluation and visualization of metrics through an intuitive user interface.
+
+## Features
+
+- **Workflow Orchestration**: Uses llama_index to ingest data and execute RAG queries against multiple LLMs
+- **Embedding Layer**: Integrates Nomic Atlas embeddings for text and code, with flexibility to swap providers
+- **Local Model Serving**: Serves models via Ollama on the user's machine, with Docker-compose config and GPU detection
+- **Evaluation Framework**: Instruments Comet ML Opik to log prompts, responses, and metrics
+- **Web Crawling**: Incorporates Crawl4AI to crawl and preprocess websites for RAG
+- **Interactive UI**: Built with Streamlit for model selection, testing, and comparison
+- **Advanced Visualization**: Side-by-side comparisons, radar charts, and performance leaderboards
+- **Code Repository Analysis**: Ingest and query code repositories for technical documentation or code understanding
+
+## Architecture
+
+```
+User Interface (Streamlit)
+       ↓
+Workflow Orchestrator (llama_index)
+       ↓
+Vector Store (Postgres/SQLite with pgvector)
+       ↓
+Embedding API (Nomic Atlas)
+       ↓
+LLM Backends (Ollama, OpenAI, etc.)
+       ↓
+Evaluation & Logging (Comet ML Opik)
+       ↑
+Web Crawler (Crawl4AI) → Ingestion
+```
+
+## Installation
+
+### Prerequisites
+
+- Python 3.9+
+- Docker and docker-compose
+- (Optional) NVIDIA GPU with CUDA support for GPU acceleration
+- Ollama installed locally for local model serving
+
+### Setup
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/llm-comparison.git
+   cd llm-comparison
+   ```
+
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. Set up environment variables:
+   ```bash
+   cp .env.example .env
+   # Edit .env with your API keys and configuration
+   ```
+
+4. Start the services using Docker:
+   ```bash
+   docker-compose up -d
+   ```
+
+5. Run the Streamlit UI:
+   ```bash
+   streamlit run src/features/base_ui/app.py
+   ```
+
+## Detailed Usage Guide
+
+### 1. Data Ingestion
+
+The Data Ingestion page offers three methods to load data:
+
+#### File Upload
+- Supports PDF, TXT, MD, and HTML files
+- Documents are processed and stored in a vector index
+- Customize index name for better organization
+
+#### Web Crawler
+- Enter URLs to crawl websites automatically
+- Configure crawl depth and maximum pages
+- Results are stored in a vector index for querying
+
+#### Code Repository
+- Clone and analyze GitHub repositories
+- Filter files by pattern (e.g., *.py, *.md)
+- Set maximum files to process for large repositories
+- Creates a searchable index of code files
+
+### 2. Model Selection
+
+The Model Selection page allows you to:
+
+- Select local models from Ollama
+- Configure remote models from providers like OpenAI and Anthropic
+- Customize model parameters (temperature, max tokens, top_p, etc.)
+- Save global prompt templates for all queries
+
+**Setting up Ollama models:**
+1. Install Ollama from [ollama.ai](https://ollama.ai)
+2. Pull models using the command line: `ollama pull llama3` (or other models)
+3. Select the pulled models in the UI
+
+### 3. RAG Query
+
+The RAG Query page enables you to:
+
+- Select a previously created index
+- Enter a natural language query
+- Choose which models to compare for this query
+- Configure RAG parameters (similarity top-k, threshold)
+- View retrieved context with sources and relevance scores
+- Compare model responses side-by-side or individually
+- Save results to evaluation experiments
+
+### 4. Evaluation
+
+The Evaluation page helps you:
+
+- Create or load evaluation experiments
+- Select evaluation metrics (ROUGE, semantic similarity, etc.)
+- Run batch evaluations against multiple models
+- Automate testing with multiple queries
+- Add optional ground truth answers for accuracy measurement
+
+### 5. Results Visualization
+
+The Results page provides comprehensive visualization:
+
+- Metrics Overview: Charts for each evaluation metric
+- Model Comparison: Side-by-side comparisons and radar charts
+- Response Analysis: Searchable history of all model responses
+- Export: Download results in JSON, CSV, or HTML report formats
+- Model Leaderboard: Overall performance ranking
+
+## Troubleshooting
+
+### Ollama Connection Issues
+- Ensure Ollama is running locally (`ollama serve`)
+- Check that the Ollama API is accessible at http://localhost:11434
+- Try running `ollama list` to see available models
+
+### Vector Database Connection
+- Verify PostgreSQL with pgvector is running (`docker ps`)
+- Check connection settings in your .env file
+- Database tables are created automatically on first run
+
+### API Key Problems
+- Ensure all required API keys are in your .env file
+- Check API usage limits for remote services
+
+### Performance Issues
+- For large documents, increase chunk size in config.yaml
+- If using GPU, ensure proper CUDA configuration
+- Reduce batch sizes for embedding operations
+
+## Development
+
+### Project Structure
+
+```
+llm-comparison/
+├── src/
+│   ├── features/
+│   │   ├── base_ui/         # Streamlit UI
+│   │   ├── llm_compare/     # Core comparison logic
+│   ├── shared/              # Shared utilities
+├── tests/                   # Test suite
+├── docker/                  # Docker configuration
+├── .env.example             # Example environment variables
+├── docker-compose.yml       # Docker compose configuration
+├── requirements.txt         # Python dependencies
+└── README.md                # This file
+```
+
+### Running Tests
+
+```bash
+pytest tests/
+```
+
+### Adding New Models
+
+To add support for a new LLM provider:
+1. Create a new provider class in `src/features/llm_compare/llm.py`
+2. Implement the required interface methods
+3. Register the provider in the `get_llm_provider` factory function
+4. Update the UI to display the new provider option
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
+## Acknowledgements
+
+- [llama_index](https://docs.llamaindex.ai/)
+- [Nomic Atlas](https://docs.nomic.ai/atlas/)
+- [Ollama](https://ollama.ai/)
+- [Comet ML Opik](https://www.comet.com/site/products/opik/)
+- [Crawl4AI](https://github.com/unclecode/crawl4ai)
+- [Streamlit](https://streamlit.io/)

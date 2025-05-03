@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # Vector database for storing embeddings
+  vectordb:
+    image: ankane/pgvector:latest
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=llm_comparison
+    ports:
+      - "5432:5432"
+    volumes:
+      - vectordb_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # Ollama service for local LLM serving
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  # Web application
+  webapp:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+    depends_on:
+      - vectordb
+      - ollama
+    environment:
+      - POSTGRES_HOST=vectordb
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=llm_comparison
+      - OLLAMA_HOST=ollama
+      - OLLAMA_PORT=11434
+    restart: unless-stopped
+
+volumes:
+  vectordb_data:
+  ollama_data: 
