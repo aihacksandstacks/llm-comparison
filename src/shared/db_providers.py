@@ -6,7 +6,7 @@ Supports PostgreSQL with pgvector and Supabase.
 import os
 from typing import Dict, Any, Union, Optional
 import httpx
-from sqlalchemy import create_engine, Column, String, JSON, Float, MetaData, Table
+from sqlalchemy import create_engine, Column, String, JSON, Float, MetaData, Table, text
 from sqlalchemy.dialects.postgresql import ARRAY
 import numpy as np
 import json
@@ -92,6 +92,11 @@ class PostgresVectorProvider(DBProvider):
             # Create engine
             self.engine = create_engine(connection_url)
             
+            # Create pgvector extension if it doesn't exist
+            with self.engine.connect() as conn:
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                conn.commit()
+            
             # Define embeddings table
             self.embeddings_table = Table(
                 'embeddings', 
@@ -107,7 +112,7 @@ class PostgresVectorProvider(DBProvider):
             
             # Test connection
             with self.engine.connect() as conn:
-                conn.execute("SELECT 1")
+                conn.execute(text("SELECT 1"))
             
             return True
         except Exception as e:
@@ -182,7 +187,7 @@ class PostgresVectorProvider(DBProvider):
         try:
             with self.engine.connect() as conn:
                 # Use cosine similarity with pgvector
-                query = f"""
+                query = text(f"""
                 SELECT 
                     id, 
                     text, 
@@ -194,7 +199,7 @@ class PostgresVectorProvider(DBProvider):
                     embedding <=> ARRAY{embedding}::float[]
                 LIMIT 
                     {top_k}
-                """
+                """)
                 
                 results = conn.execute(query).fetchall()
                 

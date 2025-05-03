@@ -172,13 +172,13 @@ llm-comparison/
 │   ├── features/
 │   │   ├── base_ui/         # Streamlit UI
 │   │   ├── llm_compare/     # Core comparison logic
-│   ├── shared/              # Shared utilities
-├── tests/                   # Test suite
-├── docker/                  # Docker configuration
-├── .env.example             # Example environment variables
-├── docker-compose.yml       # Docker compose configuration
-├── requirements.txt         # Python dependencies
-└── README.md                # This file
+│   │   ├── shared/              # Shared utilities
+│   ├── tests/                   # Test suite
+│   ├── docker/                  # Docker configuration
+│   ├── .env.example             # Example environment variables
+│   ├── docker-compose.yml       # Docker compose configuration
+│   ├── requirements.txt         # Python dependencies
+│   └── README.md                # This file
 ```
 
 ### Running Tests
@@ -211,3 +211,24 @@ This project is licensed under the [MIT License](LICENSE).
 - [Comet ML Opik](https://www.comet.com/site/products/opik/)
 - [Crawl4AI](https://github.com/unclecode/crawl4ai)
 - [Streamlit](https://streamlit.io/)
+
+## Vector Database Options
+
+### PostgreSQL with pgvector (Default)
+
+The default configuration uses a local PostgreSQL database with the pgvector extension for vector storage and similarity search. This option works out of the box with the provided docker-compose configuration.
+
+### Supabase Integration
+
+You can also use Supabase as your vector database. To set this up:
+
+1. Create a Supabase project at https://supabase.com
+2. Enable the pgvector extension in your Supabase project
+3. Create the necessary tables and functions by running the SQL in `supabase_setup.sql`
+4. Update your `.env` file:
+   ```
+   DB_PROVIDER=supabase
+   SUPABASE_URL=https://your-project-id.supabase.co
+   SUPABASE_KEY=your-supabase-api-key
+   SUPABASE_TABLE=embeddings
+   ```
