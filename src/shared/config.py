@@ -24,6 +24,7 @@ Path(CACHE_DIR).mkdir(parents=True, exist_ok=True)
 Path(MODELS_DIR).mkdir(parents=True, exist_ok=True)
 
 # Database configuration
+DB_PROVIDER = os.getenv('DB_PROVIDER', 'postgres').lower()
 DB_CONFIG = {
     'host': os.getenv('POSTGRES_HOST', 'localhost'),
     'port': int(os.getenv('POSTGRES_PORT', '5432')),
@@ -32,10 +33,23 @@ DB_CONFIG = {
     'database': os.getenv('POSTGRES_DB', 'llm_comparison'),
 }
 
+# Supabase configuration
+SUPABASE_CONFIG = {
+    'url': os.getenv('SUPABASE_URL', ''),
+    'key': os.getenv('SUPABASE_KEY', ''),
+    'table': os.getenv('SUPABASE_TABLE', 'embeddings'),
+}
+
 # Ollama configuration
 OLLAMA_CONFIG = {
     'host': os.getenv('OLLAMA_HOST', 'localhost'),
     'port': int(os.getenv('OLLAMA_PORT', '11434')),
+}
+
+# Opik configuration
+OPIK_CONFIG = {
+    'host': os.getenv('OPIK_HOST', 'localhost'),
+    'port': int(os.getenv('OPIK_PORT', '8000')),
 }
 
 # API Keys
