@@ -29,6 +29,50 @@ services:
               count: all
               capabilities: [gpu]
     restart: unless-stopped
+    
+  # Opik services for LLM inference
+  opik-backend:
+    image: ghcr.io/comet-ml/opik/opik-backend:latest
+    ports:
+      - "${OPIK_BACKEND_PORT:-8000}:8000"
+    environment:
+      - HOST=${OPIK_HOST:-0.0.0.0}
+      - PORT=${OPIK_BACKEND_PORT:-8000}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - CACHE_PATH=/app/cache
+    volumes:
+      - opik_cache:/app/cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  opik-python-backend:
+    image: ghcr.io/comet-ml/opik/opik-python-backend:latest
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  opik-frontend:
+    image: ghcr.io/comet-ml/opik/opik-frontend:latest
+    ports:
+      - "${OPIK_FRONTEND_PORT:-3000}:3000"
+    environment:
+      - BACKEND_URL=http://opik-backend:8000
+    depends_on:
+      - opik-backend
+    restart: unless-stopped
 
   # Web application
   webapp:
@@ -42,6 +86,7 @@ services:
     depends_on:
       - vectordb
       - ollama
+      - opik-backend
     environment:
       - POSTGRES_HOST=vectordb
       - POSTGRES_PORT=5432
@@ -50,8 +95,11 @@ services:
       - POSTGRES_DB=llm_comparison
       - OLLAMA_HOST=ollama
       - OLLAMA_PORT=11434
+      - OPIK_HOST=opik-backend
+      - OPIK_PORT=8000
     restart: unless-stopped
 
 volumes:
   vectordb_data:
-  ollama_data: 
+  ollama_data:
+  opik_cache: 
