@@ -172,13 +172,14 @@ llm-comparison/
 │   ├── features/
 │   │   ├── base_ui/         # Streamlit UI
 │   │   ├── llm_compare/     # Core comparison logic
-│   │   ├── shared/              # Shared utilities
-│   ├── tests/                   # Test suite
-│   ├── docker/                  # Docker configuration
-│   ├── .env.example             # Example environment variables
-│   ├── docker-compose.yml       # Docker compose configuration
-│   ├── requirements.txt         # Python dependencies
-│   └── README.md                # This file
+│   ├── shared/              # Shared utilities
+├── tests/                   # Test suite
+├── docker/                  # Docker configuration
+├── .env.example             # Example environment variables
+├── docker-compose.yml       # Docker compose configuration
+├── requirements.txt         # Python dependencies
+├── README.md                # This file
+└── supabase_setup.sql       # SQL setup for Supabase
 ```
 
 ### Running Tests
