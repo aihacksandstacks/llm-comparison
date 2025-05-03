@@ -67,6 +67,13 @@ COMET_CONFIG = {
 
 # Logging configuration
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
+LOG_DIR = os.getenv('LOG_DIR', str(ROOT_DIR / 'logs'))
+LOG_CONFIG = {
+    'level': LOG_LEVEL,
+    'dir': LOG_DIR,
+    'file_name_prefix': 'llm_comparison',
+    'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+}
 
 # Load additional configuration from YAML file if exists
 CONFIG_FILE = ROOT_DIR / 'config.yaml'

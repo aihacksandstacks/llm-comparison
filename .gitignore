@@ -116,6 +116,7 @@ data/
 ollama_data/
 vectordb_data/
 .context/
+logs/
 
 # mkdocs documentation
 /site

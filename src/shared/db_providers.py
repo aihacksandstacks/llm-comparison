@@ -12,6 +12,10 @@ import numpy as np
 import json
 
 from src.shared.config import DB_CONFIG
+from src.shared.logger import get_logger, log_db_operation
+
+# Set up module logger
+logger = get_logger(__name__)
 
 class DBProvider:
     """Base class for database providers."""
@@ -19,6 +23,8 @@ class DBProvider:
     def __init__(self):
         """Initialize the database provider."""
         self.connection = None
+        self.logger = get_logger(f"{__name__}.{self.__class__.__name__}")
+        self.logger.info(f"Initializing {self.__class__.__name__}")
     
     def connect(self) -> bool:
         """
@@ -77,6 +83,7 @@ class PostgresVectorProvider(DBProvider):
         self.engine = None
         self.metadata = MetaData()
         self.embeddings_table = None
+        self.logger.debug(f"PostgreSQL config: host={self.config['host']}, port={self.config['port']}, db={self.config['database']}")
     
     def connect(self) -> bool:
         """
@@ -89,11 +96,14 @@ class PostgresVectorProvider(DBProvider):
             # Create connection URL
             connection_url = f"postgresql://{self.config['user']}:{self.config['password']}@{self.config['host']}:{self.config['port']}/{self.config['database']}"
             
+            self.logger.info(f"Connecting to PostgreSQL at {self.config['host']}:{self.config['port']}/{self.config['database']}")
+            
             # Create engine
             self.engine = create_engine(connection_url)
             
             # Create pgvector extension if it doesn't exist
             with self.engine.connect() as conn:
+                self.logger.debug("Creating pgvector extension if it doesn't exist")
                 conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
                 conn.commit()
             
@@ -108,20 +118,23 @@ class PostgresVectorProvider(DBProvider):
             )
             
             # Create tables if they don't exist
+            self.logger.debug("Creating tables if they don't exist")
             self.metadata.create_all(self.engine)
             
             # Test connection
             with self.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
             
+            self.logger.info("Successfully connected to PostgreSQL database")
             return True
         except Exception as e:
-            print(f"Error connecting to PostgreSQL: {e}")
+            self.logger.error(f"Error connecting to PostgreSQL: {e}", exc_info=True)
             return False
     
     def disconnect(self) -> None:
         """Disconnect from the PostgreSQL database."""
         if self.engine:
+            self.logger.info("Disconnecting from PostgreSQL database")
             self.engine.dispose()
     
     def store_embedding(self, doc_id: str, text: str, embedding: list, metadata: Dict[str, Any]) -> bool:
@@ -138,6 +151,7 @@ class PostgresVectorProvider(DBProvider):
             bool: True if successful, False otherwise.
         """
         try:
+            self.logger.debug(f"Storing embedding for document '{doc_id}'")
             with self.engine.connect() as conn:
                 # Check if document already exists
                 result = conn.execute(
@@ -145,6 +159,7 @@ class PostgresVectorProvider(DBProvider):
                 ).fetchone()
                 
                 if result:
+                    self.logger.debug(f"Document '{doc_id}' already exists, updating")
                     # Update existing document
                     conn.execute(
                         self.embeddings_table.update().where(
@@ -156,6 +171,7 @@ class PostgresVectorProvider(DBProvider):
                         )
                     )
                 else:
+                    self.logger.debug(f"Document '{doc_id}' is new, inserting")
                     # Insert new document
                     conn.execute(
                         self.embeddings_table.insert().values(
@@ -168,9 +184,16 @@ class PostgresVectorProvider(DBProvider):
                 
                 conn.commit()
                 
+            log_db_operation(self.logger, "store", {
+                "doc_id": doc_id,
+                "text_length": len(text),
+                "embedding_dimensions": len(embedding),
+                "metadata_keys": list(metadata.keys()) if metadata else []
+            })
+            
             return True
         except Exception as e:
-            print(f"Error storing embedding in PostgreSQL: {e}")
+            self.logger.error(f"Error storing embedding in PostgreSQL: {e}", exc_info=True)
             return False
     
     def search_similar(self, embedding: list, top_k: int = 5) -> list:
@@ -185,6 +208,7 @@ class PostgresVectorProvider(DBProvider):
             list: List of similar documents with their similarity scores.
         """
         try:
+            self.logger.debug(f"Searching for similar documents, top_k={top_k}")
             with self.engine.connect() as conn:
                 # Use cosine similarity with pgvector
                 query = text(f"""
@@ -213,9 +237,16 @@ class PostgresVectorProvider(DBProvider):
                         "metadata": row[3]
                     })
                 
+                self.logger.debug(f"Found {len(formatted_results)} similar documents")
+                log_db_operation(self.logger, "search", {
+                    "embedding_dimensions": len(embedding),
+                    "top_k": top_k,
+                    "results_count": len(formatted_results)
+                })
+                
                 return formatted_results
         except Exception as e:
-            print(f"Error searching similar documents in PostgreSQL: {e}")
+            self.logger.error(f"Error searching similar documents in PostgreSQL: {e}", exc_info=True)
             return []
 
 
@@ -229,6 +260,7 @@ class SupabaseProvider(DBProvider):
         self.key = os.getenv('SUPABASE_KEY', '')
         self.table = os.getenv('SUPABASE_TABLE', 'embeddings')
         self.client = None
+        self.logger.debug(f"Supabase config: url={self.url[:20]}..., table={self.table}")
     
     def connect(self) -> bool:
         """
@@ -239,8 +271,10 @@ class SupabaseProvider(DBProvider):
         """
         try:
             if not self.url or not self.key:
-                print("Supabase URL or key not provided")
+                self.logger.error("Supabase URL or key not provided")
                 return False
+            
+            self.logger.info(f"Connecting to Supabase at {self.url[:20]}...")
             
             # Create HTTP client for Supabase
             self.client = httpx.Client(
@@ -254,17 +288,20 @@ class SupabaseProvider(DBProvider):
             )
             
             # Test connection
+            self.logger.debug(f"Testing connection to table '{self.table}'")
             response = self.client.get(f"/rest/v1/{self.table}?limit=1")
             response.raise_for_status()
             
+            self.logger.info("Successfully connected to Supabase")
             return True
         except Exception as e:
-            print(f"Error connecting to Supabase: {e}")
+            self.logger.error(f"Error connecting to Supabase: {e}", exc_info=True)
             return False
     
     def disconnect(self) -> None:
         """Disconnect from Supabase."""
         if self.client:
+            self.logger.info("Disconnecting from Supabase")
             self.client.close()
     
     def store_embedding(self, doc_id: str, text: str, embedding: list, metadata: Dict[str, Any]) -> bool:
@@ -281,6 +318,8 @@ class SupabaseProvider(DBProvider):
             bool: True if successful, False otherwise.
         """
         try:
+            self.logger.debug(f"Storing embedding for document '{doc_id}'")
+            
             # Check if document already exists
             response = self.client.get(
                 f"/rest/v1/{self.table}",
@@ -296,6 +335,7 @@ class SupabaseProvider(DBProvider):
             }
             
             if response.json():
+                self.logger.debug(f"Document '{doc_id}' already exists, updating")
                 # Update existing document
                 response = self.client.patch(
                     f"/rest/v1/{self.table}",
@@ -303,6 +343,7 @@ class SupabaseProvider(DBProvider):
                     json=data
                 )
             else:
+                self.logger.debug(f"Document '{doc_id}' is new, inserting")
                 # Insert new document
                 response = self.client.post(
                     f"/rest/v1/{self.table}",
@@ -310,9 +351,17 @@ class SupabaseProvider(DBProvider):
                 )
             
             response.raise_for_status()
+            
+            log_db_operation(self.logger, "store", {
+                "doc_id": doc_id,
+                "text_length": len(text),
+                "embedding_dimensions": len(embedding),
+                "metadata_keys": list(metadata.keys()) if metadata else []
+            })
+            
             return True
         except Exception as e:
-            print(f"Error storing embedding in Supabase: {e}")
+            self.logger.error(f"Error storing embedding in Supabase: {e}", exc_info=True)
             return False
     
     def search_similar(self, embedding: list, top_k: int = 5) -> list:
@@ -327,6 +376,8 @@ class SupabaseProvider(DBProvider):
             list: List of similar documents with their similarity scores.
         """
         try:
+            self.logger.debug(f"Searching for similar documents, top_k={top_k}")
+            
             # Supabase uses RPC for vector similarity search
             response = self.client.post(
                 "/rest/v1/rpc/match_documents",
@@ -350,9 +401,16 @@ class SupabaseProvider(DBProvider):
                     "metadata": json.loads(item["metadata"]) if isinstance(item["metadata"], str) else item["metadata"]
                 })
             
+            self.logger.debug(f"Found {len(formatted_results)} similar documents")
+            log_db_operation(self.logger, "search", {
+                "embedding_dimensions": len(embedding),
+                "top_k": top_k,
+                "results_count": len(formatted_results)
+            })
+            
             return formatted_results
         except Exception as e:
-            print(f"Error searching similar documents in Supabase: {e}")
+            self.logger.error(f"Error searching similar documents in Supabase: {e}", exc_info=True)
             return []
 
 
@@ -364,6 +422,8 @@ def get_db_provider() -> DBProvider:
         DBProvider: The configured database provider.
     """
     provider_name = os.getenv('DB_PROVIDER', 'postgres').lower()
+    
+    logger.info(f"Using database provider: {provider_name}")
     
     if provider_name == 'supabase':
         return SupabaseProvider()
