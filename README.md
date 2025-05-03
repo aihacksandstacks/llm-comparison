@@ -168,18 +168,20 @@ The Results page provides comprehensive visualization:
 
 ```
 llm-comparison/
+├── database/
+│   └── supabase/
+│       └── supabase_setup.sql  # SQL setup for Supabase
+├── docker/                  # Docker configuration
 ├── src/
 │   ├── features/
 │   │   ├── base_ui/         # Streamlit UI
 │   │   ├── llm_compare/     # Core comparison logic
 │   ├── shared/              # Shared utilities
 ├── tests/                   # Test suite
-├── docker/                  # Docker configuration
 ├── .env.example             # Example environment variables
 ├── docker-compose.yml       # Docker compose configuration
 ├── requirements.txt         # Python dependencies
-├── README.md                # This file
-└── supabase_setup.sql       # SQL setup for Supabase
+└── README.md                # This file
 ```
 
 ### Running Tests
@@ -225,7 +227,7 @@ You can also use Supabase as your vector database. To set this up:
 
 1. Create a Supabase project at https://supabase.com
 2. Enable the pgvector extension in your Supabase project
-3. Create the necessary tables and functions by running the SQL in `supabase_setup.sql`
+3. Create the necessary tables and functions by running the SQL in `database/supabase/supabase_setup.sql`
 4. Update your `.env` file:
    ```
    DB_PROVIDER=supabase
