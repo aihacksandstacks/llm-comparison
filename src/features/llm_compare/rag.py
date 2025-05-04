@@ -1,4 +1,9 @@
 """
+Copyright (c) 2025 AI Hacks and Stacks
+All rights reserved.
+
+This file is part of the LLM Comparison Tool.
+
 RAG (Retrieval-Augmented Generation) module for the LLM Comparison Tool.
 Provides functionality for document ingestion, indexing, and retrieval.
 """
@@ -32,7 +37,7 @@ class RAGProcessor:
         self.index_cache_dir = Path(CACHE_DIR) / "indices"
         self.index_cache_dir.mkdir(parents=True, exist_ok=True)
         
-        # Initialize the embedding provider
+        # Always initialize a fresh embedding provider to reflect current configs
         self.embedding_provider = get_embedding_provider()
         
         # Setup llama_index with our embedding provider

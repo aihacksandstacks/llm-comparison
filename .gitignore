@@ -118,6 +118,7 @@ vectordb_data/
 .context/
 logs/
 .cursor/rules/
+add_copyright_headers.py
 
 # mkdocs documentation
 /site

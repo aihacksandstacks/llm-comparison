@@ -1,4 +1,9 @@
 """
+Copyright (c) 2025 AI Hacks and Stacks
+All rights reserved.
+
+This file is part of the LLM Comparison Tool.
+
 Configuration module for the LLM Comparison Tool.
 Loads settings from environment variables and config files.
 """

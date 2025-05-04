@@ -1,4 +1,9 @@
 """
+Copyright (c) 2025 AI Hacks and Stacks
+All rights reserved.
+
+This file is part of the LLM Comparison Tool.
+
 Evaluation module for the LLM Comparison Tool.
 Provides functionality for benchmarking and evaluating LLM outputs using Comet ML Opik.
 """

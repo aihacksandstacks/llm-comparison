@@ -1,3 +1,10 @@
+"""
+Copyright (c) 2025 AI Hacks and Stacks
+All rights reserved.
+
+This file is part of the LLM Comparison Tool.
+"""
+
 import streamlit as st
 import os
 import sys
@@ -7,13 +14,14 @@ import asyncio
 import tempfile
 from datetime import datetime
 from pathlib import Path
+import yaml
 
 # Add the project root to the path to enable imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../')))
 
 # Import our modules
 from src.features.llm_compare.rag import get_rag_processor
-from src.features.llm_compare.crawler import get_web_crawler
+from src.features.llm_compare.crawler import get_web_crawler, crawl_website
 from src.features.llm_compare.evaluation import get_evaluation_manager
 from src.features.llm_compare.llm import get_llm_provider
 from src.features.llm_compare.embeddings import get_embedding_provider
@@ -28,6 +36,9 @@ if 'initialized' not in st.session_state:
     st.session_state.current_experiment = None
     st.session_state.crawled_sites = []
     st.session_state.processed_files = []
+    # Clear any cached embedding provider
+    if 'embedding_provider' in st.session_state:
+        del st.session_state.embedding_provider
 
 # Helpers for creating directory structure
 def ensure_directories():
@@ -58,7 +69,7 @@ st.markdown("""
 st.sidebar.title("Navigation")
 page = st.sidebar.radio(
     "Select Page",
-    ["Home", "Data Ingestion", "Model Selection", "RAG Query", "Evaluation", "Results"],
+    ["Home", "Data Ingestion", "Model Selection", "RAG Query", "Evaluation", "Results", "Settings"],
 )
 
 # Home page
@@ -69,7 +80,7 @@ if page == "Home":
         ### Features
         
         - **Workflow Orchestration**: Uses llama_index to ingest data and execute RAG queries against multiple LLMs
-        - **Embedding Layer**: Integrates Nomic Atlas embeddings for text and code
+        - **Embedding Layer**: Supports both external API-based (Nomic Atlas, OpenAI) and local embeddings via Sentence Transformers
         - **Local Model Serving**: Serves models via Ollama on your machine
         - **Evaluation Framework**: Instruments Comet ML Opik to log prompts, responses, and metrics
         - **Web Crawling**: Incorporates Crawl4AI to crawl websites for RAG
@@ -100,9 +111,28 @@ if page == "Home":
     
     # Show embedding model
     try:
-        embedding_provider = get_embedding_provider()
-        embedding_model = embedding_provider.__class__.__name__
+        # Always get a fresh embedding provider to ensure config changes are reflected
+        st.session_state.embedding_provider = get_embedding_provider()
+        embedding_provider = st.session_state.embedding_provider
+        provider_type = embedding_provider.__class__.__name__
+        
+        # Get a more descriptive name for display
+        if provider_type == "NomicEmbeddingProvider":
+            embedding_model = f"Nomic Atlas ({embedding_provider.model})"
+        elif provider_type == "OpenAIEmbeddingProvider":
+            embedding_model = f"OpenAI ({embedding_provider.model})"
+        elif provider_type == "LocalEmbeddingProvider":
+            embedding_model = f"Local ({embedding_provider.model_name})"
+        elif provider_type == "NomicLocalEmbeddingProvider":
+            model_short_name = embedding_provider.model_name.split('/')[-1]
+            embedding_model = f"Nomic Local ({model_short_name})"
+        else:
+            embedding_model = provider_type
     except Exception as e:
+        import traceback
+        error_msg = traceback.format_exc()
+        st.warning(f"Embedding provider error: {str(e)}")
+        st.warning(f"Error details: {error_msg}")
         embedding_model = "Not Available"
     
     col1, col2, col3 = st.columns(3)
@@ -162,11 +192,11 @@ elif page == "Data Ingestion":
             if st.button("Start Crawling"):
                 with st.spinner(f"Crawling {url} with depth {depth}..."):
                     try:
-                        # Initialize web crawler
-                        crawler = get_web_crawler()
+                        # Use the module-level synchronous function instead of the instance method
+                        from src.features.llm_compare.crawler import crawl_website
                         
                         # Start crawling
-                        result = crawler.crawl_website(
+                        result = crawl_website(
                             url=url,
                             depth=depth,
                             max_pages=max_pages,
@@ -544,10 +574,7 @@ elif page == "Model Selection":
         
         for model_info in all_selected_models:
             model_key = f"{model_info['name']}_{model_info['provider']}"
-            params = st.session_state.model_parameters.get(model_key, {
-                "temperature": 0.7,
-                "max_tokens": 512
-            })
+            params = st.session_state.model_parameters.get(model_key, {})
             
             model_table_data["Model"].append(model_info['name'])
             model_table_data["Provider"].append(model_info['provider'])
@@ -1572,6 +1599,216 @@ elif page == "Results":
         
         # Create a bar chart
         st.bar_chart(pivot_df)
+
+# Settings page
+elif page == "Settings":
+    st.header("Settings")
+    
+    # Create tabs for different settings categories
+    tab1, tab2 = st.tabs(["Embedding Settings", "System Settings"])
+    
+    with tab1:
+        st.subheader("Embedding Provider Configuration")
+        
+        # Get current config
+        embedding_config = get_config("embeddings")
+        current_provider = embedding_config.get("provider", "nomic")
+        
+        # Provider selection
+        provider_options = {
+            "nomic_local": "Nomic Local (No API key needed)",  # Move this to first position to highlight it
+            "nomic": "Nomic Atlas (External API)",
+            "openai": "OpenAI (External API)",
+            "local": "Local (Sentence Transformers)"
+        }
+        
+        # Default to nomic_local if no provider is set
+        if not current_provider or current_provider not in provider_options:
+            current_provider = "nomic_local"
+            
+        selected_provider = st.selectbox(
+            "Select Embedding Provider", 
+            options=list(provider_options.keys()),
+            format_func=lambda x: provider_options[x],
+            index=list(provider_options.keys()).index(current_provider)
+        )
+        
+        # Add info about nomic_local
+        if selected_provider == "nomic_local":
+            st.info("""
+                **Nomic Local** embeddings run entirely on your machine with no API key required.
+                These high-quality embeddings are:
+                - State-of-the-art open source models that outperform many commercial alternatives
+                - Able to run locally without sending data to external services
+                - Fast and cost-effective for high-volume embedding tasks
+                - Automatically optimized with task-specific prefixes
+            """)
+        elif selected_provider in ["nomic", "openai"]:
+            st.warning("This provider requires an API key and will incur usage costs.")
+        
+        # Model selection based on provider
+        if selected_provider == "nomic":
+            model_options = ["nomic-embed-text-v1.5", "nomic-embed-text-v1"]
+            default_model = embedding_config.get("model", "nomic-embed-text-v1.5")
+            if default_model not in model_options:
+                default_model = model_options[0]
+                
+            selected_model = st.selectbox(
+                "Select Nomic Model",
+                options=model_options,
+                index=model_options.index(default_model)
+            )
+            
+            # API key input
+            api_key = st.text_input(
+                "Nomic API Key",
+                value="",
+                type="password",
+                help="Leave blank to use the key from environment variables"
+            )
+            
+        elif selected_provider == "openai":
+            model_options = ["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"]
+            default_model = embedding_config.get("model", "text-embedding-3-small")
+            if default_model not in model_options:
+                default_model = model_options[0]
+                
+            selected_model = st.selectbox(
+                "Select OpenAI Model",
+                options=model_options,
+                index=model_options.index(default_model)
+            )
+            
+            # API key input
+            api_key = st.text_input(
+                "OpenAI API Key",
+                value="",
+                type="password",
+                help="Leave blank to use the key from environment variables"
+            )
+            
+        elif selected_provider == "local":
+            model_options = [
+                "all-MiniLM-L6-v2",
+                "all-mpnet-base-v2",
+                "paraphrase-multilingual-MiniLM-L12-v2",
+                "multi-qa-MiniLM-L6-cos-v1"
+            ]
+            default_model = embedding_config.get("model", "all-MiniLM-L6-v2")
+            if default_model not in model_options:
+                default_model = model_options[0]
+                
+            selected_model = st.selectbox(
+                "Select Local Model",
+                options=model_options,
+                index=model_options.index(default_model) if default_model in model_options else 0
+            )
+            
+            st.info("""
+                Local models run entirely on your machine and don't require an API key.
+                Models will be downloaded automatically the first time they're used.
+            """)
+            
+        elif selected_provider == "nomic_local":
+            model_options = [
+                "nomic-ai/nomic-embed-text-v1",
+                "nomic-ai/nomic-embed-text-v1.5"
+            ]
+            default_model = embedding_config.get("model", "nomic-ai/nomic-embed-text-v1")
+            if default_model not in model_options:
+                default_model = model_options[0]
+                
+            selected_model = st.selectbox(
+                "Select Nomic Local Model",
+                options=model_options,
+                index=model_options.index(default_model) if default_model in model_options else 0
+            )
+            
+            task_type_options = ["search_document", "search_query", "clustering", "classification"]
+            default_task_type = embedding_config.get("task_type", "search_document")
+            
+            selected_task_type = st.selectbox(
+                "Select Task Type",
+                options=task_type_options,
+                index=task_type_options.index(default_task_type) if default_task_type in task_type_options else 0,
+                help="Nomic Embed requires a task instruction prefix based on your use case"
+            )
+            
+            st.info("""
+                Nomic Embed models run entirely on your machine and don't require an API key.
+                These are state-of-the-art open source models that outperform OpenAI's ada models.
+                Models will be downloaded automatically the first time they're used (~270MB).
+                
+                Note: Each text being embedded requires a task instruction prefix (automatically added):
+                - search_document: For embedding documents in a retrieval system
+                - search_query: For embedding queries to search against documents
+                - clustering: For grouping similar texts together
+                - classification: For classifying texts into categories
+            """)
+        
+        # Cache settings
+        use_cache = st.checkbox("Enable Embedding Cache", value=embedding_config.get("cache_enabled", True))
+        
+        # Save settings button
+        if st.button("Save Embedding Settings"):
+            # Create a minimal config file update
+            try:
+                # Read the current config file
+                with open(os.path.join(os.path.dirname(DATA_DIR), 'config.yaml'), 'r') as f:
+                    config_data = yaml.safe_load(f)
+                
+                # Update embedding settings
+                if 'embeddings' not in config_data:
+                    config_data['embeddings'] = {}
+                    
+                config_data['embeddings']['provider'] = selected_provider
+                config_data['embeddings']['model'] = selected_model
+                config_data['embeddings']['cache_enabled'] = use_cache
+                
+                # Save task_type for Nomic Local
+                if selected_provider == "nomic_local" and 'selected_task_type' in locals():
+                    config_data['embeddings']['task_type'] = selected_task_type
+                
+                # Write the updated config
+                with open(os.path.join(os.path.dirname(DATA_DIR), 'config.yaml'), 'w') as f:
+                    yaml.dump(config_data, f, default_flow_style=False)
+                
+                # If API key was provided for relevant providers, save it to .env
+                if (selected_provider in ["nomic", "openai"]) and 'api_key' in locals() and api_key:
+                    env_path = os.path.join(os.path.dirname(DATA_DIR), '.env')
+                    
+                    # Read existing .env
+                    env_contents = {}
+                    if os.path.exists(env_path):
+                        with open(env_path, 'r') as f:
+                            for line in f:
+                                if '=' in line and not line.startswith('#'):
+                                    key, value = line.strip().split('=', 1)
+                                    env_contents[key] = value
+                    
+                    # Update API key
+                    if selected_provider == "nomic":
+                        env_contents["NOMIC_API_KEY"] = api_key
+                    elif selected_provider == "openai":
+                        env_contents["OPENAI_API_KEY"] = api_key
+                    
+                    # Write back to .env
+                    with open(env_path, 'w') as f:
+                        for key, value in env_contents.items():
+                            f.write(f"{key}={value}\n")
+                
+                st.success(f"Embedding settings saved successfully! Changes will take effect after restarting the application.")
+                
+            except Exception as e:
+                st.error(f"Error saving settings: {str(e)}")
+    
+    with tab2:
+        st.subheader("System Configuration")
+        st.info("Additional system settings will be available here in future updates.")
+        
+        # Show current config for reference
+        if st.checkbox("Show Current Configuration"):
+            st.json(get_config())
 
 # Footer
 st.sidebar.markdown("---")

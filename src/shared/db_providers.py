@@ -1,4 +1,9 @@
 """
+Copyright (c) 2025 AI Hacks and Stacks
+All rights reserved.
+
+This file is part of the LLM Comparison Tool.
+
 Database providers for the LLM Comparison Tool.
 Supports PostgreSQL with pgvector and Supabase.
 """

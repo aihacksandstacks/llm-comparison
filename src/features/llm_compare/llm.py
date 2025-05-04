@@ -1,4 +1,9 @@
 """
+Copyright (c) 2025 AI Hacks and Stacks
+All rights reserved.
+
+This file is part of the LLM Comparison Tool.
+
 LLM module for the LLM Comparison Tool.
 Provides interfaces for different LLM providers.
 """
@@ -10,7 +15,10 @@ import httpx
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
 
+from src.shared.logger import get_logger
 from src.shared.config import OPENAI_API_KEY, OLLAMA_CONFIG, get_config
+
+logger = get_logger(__name__)
 
 class LLMProvider(ABC):
     """Base class for LLM providers."""
@@ -62,6 +70,7 @@ class OllamaProvider(LLMProvider):
         self.host = host or OLLAMA_CONFIG["host"]
         self.port = port or OLLAMA_CONFIG["port"]
         self.base_url = f"http://{self.host}:{self.port}"
+        logger.debug(f"Ollama provider initialized with base URL: {self.base_url}")
         
     async def generate(self, 
                  prompt: str, 
@@ -85,7 +94,8 @@ class OllamaProvider(LLMProvider):
             Dictionary containing the response and metadata.
         """
         url = f"{self.base_url}/api/generate"
-        
+        logger.info(f"Generating with URL: {url}")
+
         payload = {
             "model": model,
             "prompt": prompt,
