@@ -21,12 +21,33 @@ from llama_index.core.node_parser import SentenceSplitter
 
 from src.shared.config import DATA_DIR, CACHE_DIR, get_config
 from src.features.llm_compare.embeddings import get_embedding_provider
+from src.shared.db_providers import get_db_provider
 
 class RAGProcessor:
     """Class for handling Retrieval-Augmented Generation workflows."""
     
     def __init__(self):
         """Initialize the RAG processor."""
+        # Initialize the database connection
+        self.db_provider = get_db_provider()
+        
+        # Get embedding provider from app if available or create new one
+        import streamlit as st
+        if hasattr(st, 'session_state') and 'embedding_provider' in st.session_state and st.session_state.embedding_provider is not None:
+            self.embedding_provider = st.session_state.embedding_provider
+        else:
+            # Fallback to creating a new one 
+            self.embedding_provider = get_embedding_provider()
+        
+        # Default prompt template
+        self.DEFAULT_PROMPT_TEMPLATE = (
+            "You are a helpful, respectful and honest AI assistant. "
+            "Answer the question based on the context provided.\n"
+            "Context:\n{context}\n\n"
+            "Question: {query}\n"
+            "Answer: "
+        )
+        
         # Get configuration
         rag_config = get_config("rag")
         self.chunk_size = rag_config.get("chunk_size", 512)
@@ -36,9 +57,6 @@ class RAGProcessor:
         # Create cache directory for indices
         self.index_cache_dir = Path(CACHE_DIR) / "indices"
         self.index_cache_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Always initialize a fresh embedding provider to reflect current configs
-        self.embedding_provider = get_embedding_provider()
         
         # Setup llama_index with our embedding provider
         self._setup_llama_index()

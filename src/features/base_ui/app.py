@@ -36,9 +36,37 @@ if 'initialized' not in st.session_state:
     st.session_state.current_experiment = None
     st.session_state.crawled_sites = []
     st.session_state.processed_files = []
-    # Clear any cached embedding provider
-    if 'embedding_provider' in st.session_state:
-        del st.session_state.embedding_provider
+    
+    # Load embedding provider at startup
+    try:
+        # Initialize the embedding provider only once
+        st.session_state.embedding_provider = get_embedding_provider()
+        st.session_state.embedding_config = get_config("embeddings")
+    except Exception as e:
+        st.session_state.embedding_provider = None
+        st.session_state.embedding_error = str(e)
+
+# Function to refresh embedding provider only when necessary
+def get_cached_embedding_provider():
+    """Get embedding provider from cache, or create a new one if not available or if config changed"""
+    current_config = get_config("embeddings")
+    
+    # Only create a new provider if we don't have one yet or if the config has changed
+    if (not hasattr(st.session_state, 'embedding_provider') or 
+        st.session_state.embedding_provider is None or
+        not hasattr(st.session_state, 'embedding_config') or
+        current_config != st.session_state.embedding_config):
+        
+        try:
+            st.session_state.embedding_provider = get_embedding_provider()
+            st.session_state.embedding_config = current_config
+            if 'embedding_error' in st.session_state:
+                del st.session_state.embedding_error
+        except Exception as e:
+            st.session_state.embedding_provider = None
+            st.session_state.embedding_error = str(e)
+    
+    return st.session_state.embedding_provider
 
 # Helpers for creating directory structure
 def ensure_directories():
@@ -111,28 +139,30 @@ if page == "Home":
     
     # Show embedding model
     try:
-        # Always get a fresh embedding provider to ensure config changes are reflected
-        st.session_state.embedding_provider = get_embedding_provider()
-        embedding_provider = st.session_state.embedding_provider
-        provider_type = embedding_provider.__class__.__name__
-        
-        # Get a more descriptive name for display
-        if provider_type == "NomicEmbeddingProvider":
-            embedding_model = f"Nomic Atlas ({embedding_provider.model})"
-        elif provider_type == "OpenAIEmbeddingProvider":
-            embedding_model = f"OpenAI ({embedding_provider.model})"
-        elif provider_type == "LocalEmbeddingProvider":
-            embedding_model = f"Local ({embedding_provider.model_name})"
-        elif provider_type == "NomicLocalEmbeddingProvider":
-            model_short_name = embedding_provider.model_name.split('/')[-1]
-            embedding_model = f"Nomic Local ({model_short_name})"
+        # Use cached embedding provider, only refreshes if config changes
+        embedding_provider = get_cached_embedding_provider()
+        if embedding_provider:
+            provider_type = embedding_provider.__class__.__name__
+            
+            # Get a more descriptive name for display
+            if provider_type == "NomicEmbeddingProvider":
+                embedding_model = f"Nomic Atlas ({embedding_provider.model})"
+            elif provider_type == "OpenAIEmbeddingProvider":
+                embedding_model = f"OpenAI ({embedding_provider.model})"
+            elif provider_type == "LocalEmbeddingProvider":
+                embedding_model = f"Local ({embedding_provider.model_name})"
+            elif provider_type == "NomicLocalEmbeddingProvider":
+                model_short_name = embedding_provider.model_name.split('/')[-1]
+                embedding_model = f"Nomic Local ({model_short_name})"
+            else:
+                embedding_model = provider_type
         else:
-            embedding_model = provider_type
+            embedding_model = "Not Available"
     except Exception as e:
-        import traceback
-        error_msg = traceback.format_exc()
-        st.warning(f"Embedding provider error: {str(e)}")
-        st.warning(f"Error details: {error_msg}")
+        if 'embedding_error' in st.session_state:
+            st.warning(f"Embedding provider error: {st.session_state.embedding_error}")
+        else:
+            st.warning(f"Embedding provider error: {str(e)}")
         embedding_model = "Not Available"
     
     col1, col2, col3 = st.columns(3)
@@ -1797,7 +1827,12 @@ elif page == "Settings":
                         for key, value in env_contents.items():
                             f.write(f"{key}={value}\n")
                 
-                st.success(f"Embedding settings saved successfully! Changes will take effect after restarting the application.")
+                # Force refresh of the embedding provider with new settings
+                # This will happen automatically next time get_cached_embedding_provider is called
+                if 'embedding_config' in st.session_state:
+                    del st.session_state.embedding_config
+                
+                st.success("Successfully saved embedding settings!")
                 
             except Exception as e:
                 st.error(f"Error saving settings: {str(e)}")
