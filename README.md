@@ -9,7 +9,7 @@ The LLM Comparison Tool enables fair comparison of LLMs on custom datasets, supp
 ## Features
 
 - **Workflow Orchestration**: Uses llama_index to ingest data and execute RAG queries against multiple LLMs
-- **Embedding Layer**: Integrates Nomic Atlas embeddings for text and code, with flexibility to swap providers
+- **Embedding Layer**: Supports both external API-based (Nomic Atlas, OpenAI) and local embeddings via Sentence Transformers
 - **Local Model Serving**: Serves models via Ollama on the user's machine, with Docker-compose config and GPU detection
 - **Evaluation Framework**: Instruments Comet ML Opik to log prompts, responses, and metrics
 - **Web Crawling**: Incorporates Crawl4AI to crawl and preprocess websites for RAG
@@ -26,7 +26,7 @@ Workflow Orchestrator (llama_index)
        ↓
 Vector Store (Postgres/SQLite with pgvector)
        ↓
-Embedding API (Nomic Atlas)
+Embedding Layer (Nomic Atlas, OpenAI, or Local Sentence Transformers)
        ↓
 LLM Backends (Ollama, OpenAI, etc.)
        ↓
@@ -109,7 +109,43 @@ The Model Selection page allows you to:
 2. Pull models using the command line: `ollama pull llama3` (or other models)
 3. Select the pulled models in the UI
 
-### 3. RAG Query
+### 3. Embedding Configuration
+
+The Settings page allows you to configure your embedding provider:
+
+#### External API Providers
+- **Nomic Atlas**: High-quality embeddings optimized for text and code (requires API key)
+- **OpenAI**: Industry-standard embeddings with multiple model options (requires API key)
+
+#### Local Embeddings
+- **Sentence Transformers**: Run embeddings entirely locally without API calls
+- Available models include:
+  - `all-MiniLM-L6-v2`: Fast, lightweight model (384 dimensions)
+  - `all-mpnet-base-v2`: Higher quality but slower (768 dimensions)
+  - `paraphrase-multilingual-MiniLM-L12-v2`: Multilingual support
+
+#### Nomic Local Embeddings
+- **Nomic Embed**: State-of-the-art local embeddings from Nomic AI
+- No API key required, runs completely on your machine
+- Available models:
+  - `nomic-ai/nomic-embed-text-v1`: Powerful 768-dimensional embeddings
+  - `nomic-ai/nomic-embed-text-v1.5`: Newer model with improved performance
+- Supports task-specific prefixes:
+  - `search_document`: For embedding documents in a retrieval system
+  - `search_query`: For embedding queries to search against documents
+  - `clustering`: For grouping similar texts together
+  - `classification`: For classifying texts into categories
+
+Models are automatically downloaded on first use and cached for future runs.
+
+To configure:
+1. Navigate to the Settings page in the UI
+2. Select your preferred embedding provider
+3. Choose a specific model
+4. Provide API keys if using external providers
+5. Click "Save Embedding Settings"
+
+### 4. RAG Query
 
 The RAG Query page enables you to:
 
@@ -121,7 +157,7 @@ The RAG Query page enables you to:
 - Compare model responses side-by-side or individually
 - Save results to evaluation experiments
 
-### 4. Evaluation
+### 5. Evaluation
 
 The Evaluation page helps you:
 
@@ -131,7 +167,7 @@ The Evaluation page helps you:
 - Automate testing with multiple queries
 - Add optional ground truth answers for accuracy measurement
 
-### 5. Results Visualization
+### 6. Results Visualization
 
 The Results page provides comprehensive visualization:
 
@@ -156,6 +192,14 @@ The Results page provides comprehensive visualization:
 ### API Key Problems
 - Ensure all required API keys are in your .env file
 - Check API usage limits for remote services
+
+### Embedding Issues
+- For API-based embeddings, verify your API keys in .env file
+- For local embeddings:
+  - Ensure sentence-transformers is properly installed
+  - Check for disk space if models fail to download
+  - Monitor memory usage as models are loaded into RAM
+  - First-time model downloads may take several minutes depending on your connection
 
 ### Performance Issues
 - For large documents, increase chunk size in config.yaml
@@ -240,7 +284,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgements
 
@@ -264,10 +308,4 @@ You can also use Supabase as your vector database. To set this up:
 1. Create a Supabase project at https://supabase.com
 2. Enable the pgvector extension in your Supabase project
 3. Create the necessary tables and functions by running the SQL in `database/supabase/supabase_setup.sql`
-4. Update your `.env` file:
-   ```
-   DB_PROVIDER=supabase
-   SUPABASE_URL=https://your-project-id.supabase.co
-   SUPABASE_KEY=your-supabase-api-key
-   SUPABASE_TABLE=embeddings
-   ```
+4. Update your `.env`
