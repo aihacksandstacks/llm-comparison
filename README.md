@@ -184,6 +184,16 @@ The Results page provides comprehensive visualization:
 - Check that the Ollama API is accessible at http://localhost:11434
 - Try running `ollama list` to see available models
 
+### Model-Specific Issues
+
+#### Qwen Models
+- If you encounter "Extra data" JSON parsing errors with Qwen models (particularly Qwen3:30b-a3b), the application includes a specialized parser to handle this
+- These errors typically appear as: "Extra data: line 2 column 1 (char 113)"
+- If problems persist, try:
+  - Rerunning the query (sometimes the model returns valid JSON on subsequent attempts)
+  - Reducing the input prompt length
+  - Using a different model for critical applications
+
 ### Vector Database Connection
 - Verify PostgreSQL with pgvector is running (`docker ps`)
 - Check connection settings in your .env file
@@ -205,6 +215,7 @@ The Results page provides comprehensive visualization:
 - For large documents, increase chunk size in config.yaml
 - If using GPU, ensure proper CUDA configuration
 - Reduce batch sizes for embedding operations
+- When experiencing response parsing errors with specialized models, check log files for detailed diagnostic information
 
 ## Development
 

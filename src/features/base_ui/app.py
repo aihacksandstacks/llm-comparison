@@ -21,7 +21,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../.
 
 # Import our modules
 from src.features.llm_compare.rag import get_rag_processor
-from src.features.llm_compare.crawler import get_web_crawler, crawl_website
+from src.features.llm_compare.crawler import get_web_crawler, crawl_website, simple_http_crawl_sync
 from src.features.llm_compare.evaluation import get_evaluation_manager
 from src.features.llm_compare.llm import get_llm_provider
 from src.features.llm_compare.embeddings import get_embedding_provider
@@ -211,31 +211,78 @@ elif page == "Data Ingestion":
     
     with tab2:
         st.subheader("Web Crawler")
-        url = st.text_input("Enter website URL to crawl", placeholder="https://example.com")
+        url = st.text_input("URL to crawl", placeholder="https://hacksandstacks.ai")
         depth = st.slider("Crawl Depth", min_value=1, max_value=5, value=2)
-        max_pages = st.slider("Maximum Pages", min_value=5, max_value=200, value=50)
-        
-        output_name = st.text_input("Output Name (optional)", 
-                                    help="Name for the crawl output. If left empty, will use the domain name.")
+        max_pages = st.slider("Maximum Pages", min_value=10, max_value=200, value=50)
+        output_name = st.text_input("Output Name (optional)", placeholder="Custom name for the crawled dataset")
+        use_simple_mode = st.checkbox("Use simple HTTP mode (for troubleshooting)", help="Uses simple HTTP requests instead of browser-based crawling")
+        debug_mode = st.checkbox("Debug mode", help="Show detailed debugging information")
         
         if url:
             if st.button("Start Crawling"):
                 with st.spinner(f"Crawling {url} with depth {depth}..."):
                     try:
                         # Use the module-level synchronous function instead of the instance method
-                        from src.features.llm_compare.crawler import crawl_website
+                        from src.features.llm_compare.crawler import get_web_crawler, crawl_website, simple_http_crawl_sync
+                        
+                        if debug_mode:
+                            # Enable debug logging
+                            import logging
+                            from src.features.llm_compare.crawler import logger
+                            logger.setLevel(logging.DEBUG)
+                            st.info("Debug mode enabled")
                         
                         # Start crawling
-                        result = crawl_website(
-                            url=url,
-                            depth=depth,
-                            max_pages=max_pages,
-                            output_name=output_name if output_name else None
-                        )
-                        
-                        if "error" in result:
-                            st.error(f"Crawl error: {result['error']}")
+                        if use_simple_mode:
+                            st.info("Using simple HTTP mode for crawling")
+                            # Use the simple HTTP crawl method directly
+                            simple_results = simple_http_crawl_sync(url)
+                            
+                            # Format results to match the expected structure
+                            result = {
+                                "results": simple_results,
+                                "metadata": {
+                                    "url": url,
+                                    "depth": 1,
+                                    "max_pages": 1,
+                                    "pages_crawled": len(simple_results),
+                                    "crawl_time": 0.0,
+                                    "output_name": output_name or url.replace("https://", "").replace("http://", "").split("/")[0].replace(".", "_"),
+                                    "method": "simple_http"
+                                }
+                            }
                         else:
+                            if debug_mode:
+                                st.info(f"Starting deep crawl with depth={depth}, max_pages={max_pages}")
+                            
+                            result = crawl_website(
+                                url=url,
+                                depth=depth,
+                                max_pages=max_pages,
+                                output_name=output_name if output_name else None
+                            )
+                            
+                            if debug_mode:
+                                st.code(f"Crawler returned: {type(result)}", language="python")
+                                st.code(f"Keys: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}", language="python")
+                        
+                        if not isinstance(result, dict):
+                            st.error(f"Unexpected result type: {type(result)}. Expected dictionary.")
+                            st.code(str(result), language="python")
+                            # Skip the rest of the processing
+                        
+                        elif "error" in result:
+                            error_message = result['error']
+                            # Show a more detailed error display with expandable traceback if available
+                            st.error(f"Crawl error: {error_message}")
+                            if "traceback" in result:
+                                with st.expander("Show detailed error information"):
+                                    st.code(result["traceback"], language="python")
+                            # Show any additional details that might be helpful
+                            if "metadata" in result:
+                                with st.expander("Crawl attempt details"):
+                                    st.json(result["metadata"])
+                        elif "metadata" in result and "results" in result:
                             # Get metadata
                             metadata = result["metadata"]
                             st.success(f"Crawled {metadata['pages_crawled']} pages in {metadata['crawl_time']:.2f} seconds.")
@@ -270,19 +317,26 @@ elif page == "Data Ingestion":
                                     st.success(f"Created index '{index_name}' with {len(documents)} pages.")
                                 else:
                                     st.warning("No content found in the crawled pages.")
+                        else:
+                            st.error("Unexpected result format from crawler. Missing 'results' or 'metadata'.")
+                            if debug_mode:
+                                st.code(str(result), language="python")
                     
                     except Exception as e:
                         st.error(f"Error during crawl: {str(e)}")
-        
-        # Show history of crawled sites
-        if st.session_state.crawled_sites:
-            st.subheader("Crawling History")
-            for i, metadata in enumerate(st.session_state.crawled_sites):
-                with st.expander(f"{metadata['url']} ({metadata['pages_crawled']} pages)"):
-                    st.write(f"Depth: {metadata['depth']}")
-                    st.write(f"Pages: {metadata['pages_crawled']}")
-                    st.write(f"Time: {metadata['crawl_time']:.2f} seconds")
-                    st.write(f"Output: {metadata['output_name']}")
+                        import traceback
+                        with st.expander("Show detailed error traceback"):
+                            st.code(traceback.format_exc(), language="python")
+                
+                # Show history of crawled sites
+                if st.session_state.crawled_sites:
+                    st.subheader("Crawling History")
+                    for i, metadata in enumerate(st.session_state.crawled_sites):
+                        with st.expander(f"{metadata['url']} ({metadata['pages_crawled']} pages)"):
+                            st.write(f"Depth: {metadata['depth']}")
+                            st.write(f"Pages: {metadata['pages_crawled']}")
+                            st.write(f"Time: {metadata['crawl_time']:.2f} seconds")
+                            st.write(f"Output: {metadata['output_name']}")
     
     with tab3:
         st.subheader("Code Repository")
@@ -786,18 +840,36 @@ elif page == "RAG Query":
                                     # Use asyncio to run the async generate function
                                     async def run_async():
                                         start_time = time.time()
-                                        response = await llm_provider.generate(
-                                            prompt=prompt,
-                                            system_prompt=system_prompt,
-                                            temperature=model_params.get("temperature", 0.7),
-                                            max_tokens=model_params.get("max_tokens", 512),
-                                            top_p=model_params.get("top_p", 0.9),
-                                            frequency_penalty=model_params.get("frequency_penalty", 0.0),
-                                            model=model_name
-                                        )
-                                        response["metadata"] = response.get("metadata", {})
-                                        response["metadata"]["response_time"] = time.time() - start_time
-                                        return response
+                                        try:
+                                            response = await llm_provider.generate(
+                                                prompt=prompt,
+                                                system_prompt=system_prompt,
+                                                temperature=model_params.get("temperature", 0.7),
+                                                max_tokens=model_params.get("max_tokens", 512),
+                                                top_p=model_params.get("top_p", 0.9),
+                                                frequency_penalty=model_params.get("frequency_penalty", 0.0),
+                                                model=model_name
+                                            )
+                                            response["metadata"] = response.get("metadata", {})
+                                            response["metadata"]["response_time"] = time.time() - start_time
+                                            return response
+                                        except Exception as e:
+                                            error_msg = str(e)
+                                            # Special handling for Qwen models
+                                            if "Qwen" in model_name and "Extra data" in error_msg:
+                                                st.error(f"Error with {model_name}: Qwen response format issue - the model returned invalid JSON")
+                                                st.info("Try rerunning the query - this is a known issue with some Qwen models")
+                                            # Return error response
+                                            return {
+                                                "text": f"Error: {error_msg}",
+                                                "model": model_name,
+                                                "provider": provider_name,
+                                                "metadata": {
+                                                    "response_time": time.time() - start_time,
+                                                    "error": True,
+                                                    "error_message": error_msg
+                                                }
+                                            }
                                     
                                     response = asyncio.run(run_async())
                                     results[model_str] = response

@@ -112,7 +112,38 @@ class OllamaProvider(LLMProvider):
         async with httpx.AsyncClient() as client:
             response = await client.post(url, json=payload)
             response.raise_for_status()
-            data = response.json()
+            
+            # Handle potential extra data in JSON response
+            try:
+                content = response.text
+                # Log a sample of the response content (first 100 chars) for debugging
+                content_preview = content[:100] + "..." if len(content) > 100 else content
+                logger.debug(f"Raw response from {model} (sample): {content_preview}")
+                data = self._parse_json_safely(content)
+            except Exception as e:
+                logger.error(f"Error parsing JSON from Ollama: {e}")
+                # Log full response when parsing fails to help diagnose the issue
+                logger.debug(f"Failed to parse response from {model}. Full content: {content}")
+                # Try a more permissive parsing approach for models like Qwen
+                try:
+                    import json
+                    # Try to extract just the first valid JSON object
+                    first_json = content.strip().split('\n')[0]
+                    data = json.loads(first_json)
+                    logger.warning(f"Used fallback JSON parsing for model {model}")
+                except Exception as nested_e:
+                    logger.error(f"Fallback parsing also failed: {nested_e}")
+                    # Special handling for Qwen3:30b-a3b and similar models with extra data
+                    if "Qwen" in model:
+                        try:
+                            # Use the specialized Qwen parser
+                            data = self._parse_qwen_response(content)
+                            logger.warning(f"Used specialized Qwen parser for model {model}")
+                        except Exception as qwen_e:
+                            logger.error(f"Qwen-specific parsing also failed: {qwen_e}")
+                            raise ValueError(f"Could not parse Ollama response for model {model}: {e}")
+                    else:
+                        raise ValueError(f"Could not parse Ollama response for model {model}: {e}")
         
         end_time = __import__("time").time()
         
@@ -131,6 +162,100 @@ class OllamaProvider(LLMProvider):
             }
         }
     
+    def _parse_json_safely(self, content: str) -> Dict[str, Any]:
+        """
+        Safely parse JSON content, handling various edge cases.
+        
+        Some models (like Qwen) may return JSON with extra data or multiple objects.
+        This method attempts to handle those cases.
+        
+        Args:
+            content: The JSON string to parse
+            
+        Returns:
+            Parsed JSON data
+        """
+        import json
+        
+        # First try simple parsing
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError as e:
+            logger.warning(f"Standard JSON parsing failed: {e}")
+            
+            # Check if there might be multiple JSON objects
+            if '\n' in content:
+                # Try to parse just the first line
+                first_line = content.split('\n')[0].strip()
+                if first_line.endswith('}'):
+                    try:
+                        return json.loads(first_line)
+                    except:
+                        pass
+            
+            # Try finding the closing brace of the first object
+            try:
+                # Find the position of the first opening brace
+                start = content.find('{')
+                if start != -1:
+                    # Track nested braces to find the matching closing brace
+                    depth = 0
+                    for i, char in enumerate(content[start:]):
+                        if char == '{':
+                            depth += 1
+                        elif char == '}':
+                            depth -= 1
+                            if depth == 0:
+                                # We found the closing brace of the outermost object
+                                end = start + i + 1
+                                try:
+                                    return json.loads(content[start:end])
+                                except json.JSONDecodeError:
+                                    # If there are escape characters or invalid JSON, try to fix common issues
+                                    # This is especially important for models like Qwen that may have formatting quirks
+                                    clean_json = content[start:end].replace('\n', ' ').replace('\r', '')
+                                    return json.loads(clean_json)
+            except:
+                pass
+            
+            # Special handling for Qwen models which are known to have extra data issues
+            if "qwen" in content.lower():
+                try:
+                    # Try a more aggressive approach - find the first valid JSON object
+                    brace_count = 0
+                    in_quotes = False
+                    escape = False
+                    start_pos = content.find('{')
+                    
+                    if start_pos >= 0:
+                        for i, char in enumerate(content[start_pos:], start_pos):
+                            if escape:
+                                escape = False
+                                continue
+                                
+                            if char == '\\':
+                                escape = True
+                            elif char == '"' and not escape:
+                                in_quotes = not in_quotes
+                            elif not in_quotes:
+                                if char == '{':
+                                    brace_count += 1
+                                elif char == '}':
+                                    brace_count -= 1
+                                    if brace_count == 0:
+                                        # We found a complete JSON object
+                                        try:
+                                            return json.loads(content[start_pos:i+1])
+                                        except:
+                                            # Last attempt - try to clean the string
+                                            clean_text = content[start_pos:i+1].replace('\n', ' ').replace('\r', '')
+                                            return json.loads(clean_text)
+                except:
+                    pass
+                
+            # If all else fails, re-raise the original error
+            raise
+    
     def get_available_models(self) -> List[str]:
         """
         Get a list of available models in Ollama.
@@ -143,11 +268,148 @@ class OllamaProvider(LLMProvider):
         try:
             response = httpx.get(url)
             response.raise_for_status()
-            data = response.json()
+            content = response.text
+            
+            # Use the safe JSON parser
+            data = self._parse_json_safely(content)
             return [model["name"] for model in data.get("models", [])]
         except Exception as e:
-            print(f"Error getting available models from Ollama: {e}")
+            logger.error(f"Error getting available models from Ollama: {e}")
             return []
+    
+    def get_model_info(self, model_name: str) -> Dict[str, Any]:
+        """
+        Get detailed information about a specific Ollama model.
+        
+        Args:
+            model_name: Name of the model to get information for.
+            
+        Returns:
+            Dictionary with model information including description, parameters, etc.
+        """
+        url = f"{self.base_url}/api/show"
+        
+        try:
+            response = httpx.post(url, json={"name": model_name})
+            response.raise_for_status()
+            content = response.text
+            
+            # Use the safe JSON parser
+            data = self._parse_json_safely(content)
+            
+            # Extract relevant information in a consistent format
+            model_info = {
+                "name": model_name,
+                "description": data.get("system", "No description available"),
+                "parameter_count": self._extract_parameter_count(data.get("system", "")),
+                "context_length": data.get("context_length", 4096),
+                "model_size": data.get("size", "Unknown"),
+                "modified_at": data.get("modified_at", ""),
+                "tags": [t.strip() for t in data.get("tags", "").split(",")] if data.get("tags") else []
+            }
+            
+            return model_info
+        except Exception as e:
+            logger.error(f"Error getting model info from Ollama for {model_name}: {e}")
+            return {
+                "name": model_name,
+                "description": "No description available",
+                "parameter_count": "Unknown",
+                "context_length": 4096,
+                "tags": []
+            }
+    
+    def _extract_parameter_count(self, description: str) -> str:
+        """Extract parameter count from model description if available."""
+        import re
+        # Try to find something like "7B" or "70B" in the description
+        match = re.search(r'(\d+)B', description)
+        if match:
+            return f"{match.group(1)} billion"
+        return "Unknown"
+
+    def _parse_qwen_response(self, content: str) -> Dict[str, Any]:
+        """
+        Special parser for Qwen model responses which often have formatting issues.
+        
+        The Qwen3:30b-a3b model in particular is known to return valid JSON followed by
+        extra data on line 2 (char 113), causing standard JSON parsers to fail.
+        
+        Args:
+            content: Raw response text from Qwen model
+            
+        Returns:
+            Parsed JSON data
+        """
+        import json
+        import re
+        
+        logger.debug("Using specialized Qwen response parser")
+        
+        # Method 1: Try to extract just the first valid JSON object by finding matching braces
+        try:
+            # Find the position of the first opening brace
+            start = content.find('{')
+            if start != -1:
+                # Track nested braces to find the matching closing brace
+                depth = 0
+                for i, char in enumerate(content[start:]):
+                    if char == '{':
+                        depth += 1
+                    elif char == '}':
+                        depth -= 1
+                        if depth == 0:
+                            # Found the closing brace of the first JSON object
+                            json_str = content[start:start+i+1]
+                            logger.debug(f"Found JSON object with length {len(json_str)}")
+                            return json.loads(json_str)
+        except Exception as e:
+            logger.debug(f"Method 1 failed: {e}")
+        
+        # Method 2: Try to extract just the part before the error point (char 113)
+        try:
+            first_part = content[:113].strip()
+            # Ensure it ends with a closing brace
+            if first_part.endswith('}'):
+                logger.debug("Using first 113 characters that end with '}'")
+                return json.loads(first_part)
+        except Exception as e:
+            logger.debug(f"Method 2 failed: {e}")
+        
+        # Method 3: Try to find the first complete JSON object using regex
+        try:
+            # Python's re module doesn't support recursion (?R), so use a simpler approach
+            # Try to find a pattern that looks like a JSON object with reasonable constraints
+            json_pattern = re.compile(r'(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})')
+            match = json_pattern.search(content)
+            if match:
+                logger.debug("Found JSON using regex")
+                return json.loads(match.group(0))
+        except Exception as e:
+            logger.debug(f"Method 3 failed: {e}")
+        
+        # Method 4: Last resort - try with a simplistic approach
+        try:
+            # Find the first { and the next } after skipping nested braces
+            open_index = content.find('{')
+            if open_index >= 0:
+                # Try to find the matching closing brace
+                nested = 0
+                for i in range(open_index + 1, len(content)):
+                    if content[i] == '{':
+                        nested += 1
+                    elif content[i] == '}':
+                        if nested == 0:
+                            # This is the matching closing brace
+                            json_str = content[open_index:i+1]
+                            logger.debug(f"Last resort method found JSON with length {len(json_str)}")
+                            return json.loads(json_str)
+                        nested -= 1
+        except Exception as e:
+            logger.debug(f"Method 4 failed: {e}")
+        
+        # If all methods fail, raise an informative error
+        raise ValueError("Could not parse Qwen response with any method. The response format may have changed.")
 
 
 class OpenAIProvider(LLMProvider):
