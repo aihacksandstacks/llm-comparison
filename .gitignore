@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 .cache
 .pytest_cache/
+cache/
 
 # C extensions
 *.so
@@ -119,6 +120,7 @@ vectordb_data/
 logs/
 .cursor/rules/
 add_copyright_headers.py
+run_dev.py
 
 # mkdocs documentation
 /site

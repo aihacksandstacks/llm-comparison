@@ -22,7 +22,10 @@ httpx>=0.28.0
 pyyaml>=6.0.0
 comet-ml>=3.0.0
 docker>=7.0.0
-crawl4ai>=0.1.0
+crawl4ai>=0.6.0
+sentence-transformers>=2.3.0
+transformers>=4.36.0
+einops>=0.8.0
 # UI Enhancement dependencies
 altair>=5.0.0
 plotly>=5.0.0
