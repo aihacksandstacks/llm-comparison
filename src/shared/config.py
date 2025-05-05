@@ -61,7 +61,6 @@ OPIK_CONFIG = {
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 NOMIC_API_KEY = os.getenv('NOMIC_API_KEY', '')
 COMET_API_KEY = os.getenv('COMET_API_KEY', '')
-CRAWL4AI_API_KEY = os.getenv('CRAWL4AI_API_KEY', '')
 
 # Comet ML configuration
 COMET_CONFIG = {
