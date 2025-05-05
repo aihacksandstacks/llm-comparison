@@ -1,72 +1,60 @@
-# LLM Comparison Tool Configuration
-
-# Embedding configuration
 embeddings:
-  provider: "nomic"  # Options: nomic, openai, local
-  model: "nomic-embed-text-v1.5"
-  dimension: 768
   batch_size: 32
   cache_enabled: true
-
-# LLM providers configuration
-llm_providers:
-  # Ollama models configuration
-  ollama:
-    models:
-      - name: "llama3"
-        parameters:
-          temperature: 0.7
-          max_tokens: 512
-      - name: "mistral"
-        parameters:
-          temperature: 0.7
-          max_tokens: 512
-      - name: "phi3"
-        parameters:
-          temperature: 0.7
-          max_tokens: 512
-  
-  # OpenAI models configuration
-  openai:
-    models:
-      - name: "gpt-3.5-turbo"
-        parameters:
-          temperature: 0.7
-          max_tokens: 512
-      - name: "gpt-4"
-        parameters:
-          temperature: 0.7
-          max_tokens: 512
-
-# RAG configuration
-rag:
-  chunk_size: 512
-  chunk_overlap: 128
-  similarity_top_k: 5
-  
-# Evaluation configuration
+  dimension: 768
+  model: nomic-ai/nomic-embed-text-v1
+  provider: nomic_local
+  task_type: search_document
 evaluation:
   metrics:
-    - name: "rouge"
+  - name: rouge
+    parameters:
+      rouge_types:
+      - rouge1
+      - rouge2
+      - rougeL
+  - name: semantic_similarity
+    parameters:
+      model: nomic-embed-text-v1.5
+  - name: response_time
+  - name: token_count
+llm_providers:
+  ollama:
+    models:
+    - name: llama3
       parameters:
-        rouge_types: ["rouge1", "rouge2", "rougeL"]
-    - name: "semantic_similarity"
+        max_tokens: 512
+        temperature: 0.7
+    - name: mistral
       parameters:
-        model: "nomic-embed-text-v1.5"
-    - name: "response_time"
-    - name: "token_count"
-
-# Web crawling configuration
+        max_tokens: 512
+        temperature: 0.7
+    - name: phi3
+      parameters:
+        max_tokens: 512
+        temperature: 0.7
+  openai:
+    models:
+    - name: gpt-3.5-turbo
+      parameters:
+        max_tokens: 512
+        temperature: 0.7
+    - name: gpt-4
+      parameters:
+        max_tokens: 512
+        temperature: 0.7
+rag:
+  chunk_overlap: 128
+  chunk_size: 512
+  similarity_top_k: 5
+ui:
+  default_page: Home
+  max_display_items: 50
+  refresh_interval: 5
+  theme: light
 web_crawling:
   max_depth: 3
   max_pages: 100
-  timeout: 30  # seconds
-  user_agent: "LLM-Comparison-Tool/0.1.0"
   respect_robots_txt: true
-
-# UI configuration
-ui:
-  theme: "light"  # Options: light, dark
-  default_page: "Home"
-  max_display_items: 50
-  refresh_interval: 5  # seconds 
+  timeout: 30
+  user_agent: LLM-Comparison-Tool/0.1.0

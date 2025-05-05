@@ -1,5 +1,4 @@
 name: llm-comparison
-version: '3.8'
 
 services:
   # Choose ONE of these database options by uncommenting
@@ -46,6 +45,8 @@ services:
       - OPIK_HOST=${OPIK_HOST:-localhost}
       - OPIK_PORT=${OPIK_BACKEND_PORT:-8000}
     restart: unless-stopped
+    command: >
+      streamlit run src/features/base_ui/app.py --server.port=8501 --server.address=0.0.0.0 --server.fileWatcherType=none
 
 volumes:
   vectordb_data:

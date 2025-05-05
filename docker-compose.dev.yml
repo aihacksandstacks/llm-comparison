@@ -1,5 +1,4 @@
 name: llm-comparison
-version: '3.8'
 
 services:
   # Vector database for storing embeddings
@@ -21,7 +20,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     ports:
-      - "8502:8501"
+      - "${STREAMLIT_PORT:-8502}:8502"
     volumes:
       - .:/app
       - ~/.streamlit:/root/.streamlit
@@ -53,7 +52,7 @@ services:
     depends_on:
       - vectordb
     command: >
-      bash -c "pip install --force-reinstall watchdog einops sentence-transformers torch transformers && streamlit run src/features/base_ui/app.py --server.port=8501 --server.address=0.0.0.0 --server.runOnSave=false --server.enableCORS=false --server.enableXsrfProtection=false"
+      streamlit run src/features/base_ui/app.py --server.port=8502 --server.address=0.0.0.0 --server.runOnSave=false --server.enableCORS=false --server.enableXsrfProtection=false --server.fileWatcherType=none
     restart: unless-stopped
 
 volumes:
