@@ -26,6 +26,9 @@ crawl4ai>=0.6.0
 sentence-transformers>=2.3.0
 transformers>=4.36.0
 einops>=0.8.0
+# RAG dependencies
+faiss-cpu>=1.9.0
+psycopg2>=2.9.0
 # UI Enhancement dependencies
 altair>=5.0.0
 plotly>=5.0.0

@@ -25,6 +25,7 @@ from llama_index.core.embeddings import BaseEmbedding
 from src.shared.config import DATA_DIR, CACHE_DIR, get_config
 from src.features.llm_compare.embeddings import get_embedding_provider
 from src.shared.db_providers import get_db_provider
+from src.shared.logger import get_logger
 
 # Create our own implementation of BaseEmbedding
 class AdapterEmbedding(BaseEmbedding):
@@ -55,6 +56,10 @@ class RAGProcessor:
         """Initialize the RAG processor."""
         # Initialize the database connection
         self.db_provider = get_db_provider()
+        self.db_connected = self.db_provider.connect()
+        
+        if not self.db_connected:
+            self.logger.warning("Database connection failed. Some features may not work properly.")
         
         # Get embedding provider from app if available or create new one
         import streamlit as st
@@ -84,6 +89,9 @@ class RAGProcessor:
         # Create cache directory for indices
         self.index_cache_dir = Path(CACHE_DIR) / "indices"
         self.index_cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Set up logger
+        self.logger = get_logger(f"{__name__}.{self.__class__.__name__}")
         
         # Setup llama_index with our embedding provider
         self._setup_llama_index()
@@ -218,188 +226,100 @@ class RAGProcessor:
     
     def create_index(self, documents: List[Document], index_name: str) -> VectorStoreIndex:
         """
-        Create a vector store index from documents.
+        Create a new index from documents and save it to disk.
         
         Args:
-            documents: List of Document objects.
-            index_name: Name for the index (used for caching).
+            documents: List of Document objects to index.
+            index_name: Name of the index.
             
         Returns:
-            VectorStoreIndex object.
+            The created VectorStoreIndex.
         """
-        import sys
-        import traceback
-        
-        print(f"Starting to create index '{index_name}' with {len(documents)} documents")
-        
-        # First, let's save the documents separately in case indexing fails
         try:
-            # Create a safety backup of documents
-            backup_dir = self.index_cache_dir / f"{index_name}_backup"
-            backup_dir.mkdir(parents=True, exist_ok=True)
+            self.logger.info(f"Creating index '{index_name}' with {len(documents)} documents")
             
-            # Save each document separately to avoid one large serialization that could fail
-            for i, doc in enumerate(documents):
-                try:
-                    doc_path = backup_dir / f"doc_{i}.pkl"
-                    with open(doc_path, "wb") as f:
-                        pickle.dump(doc, f)
-                except Exception as e:
-                    print(f"Warning: Failed to save document {i} backup: {e}")
-            
-            print(f"Created document backups in {backup_dir}")
-        except Exception as e:
-            print(f"Warning: Failed to create document backups: {e}")
-            print(traceback.format_exc())
-        
-        try:
-            # Try to create the index in smaller batches to reduce memory usage
-            # and make it easier to diagnose where a failure might occur
-            
-            print("Splitting documents into batches for indexing...")
-            batch_size = min(10, max(1, len(documents) // 5))  # Use smaller batches for larger document sets
-            batches = [documents[i:i+batch_size] for i in range(0, len(documents), batch_size)]
-            print(f"Created {len(batches)} batches with approximately {batch_size} documents each")
-            
-            # Process each batch
-            all_nodes = []
-            for i, batch in enumerate(batches):
-                try:
-                    print(f"Processing batch {i+1}/{len(batches)} with {len(batch)} documents")
-                    # Create an index for this batch
-                    batch_index = VectorStoreIndex.from_documents(batch)
-                    print(f"Successfully created index for batch {i+1}")
-                    
-                    # Extract nodes from this batch's index
-                    if hasattr(batch_index, "as_retriever") and hasattr(batch_index.as_retriever(), "get_nodes"):
-                        nodes = batch_index.as_retriever().get_nodes()
-                        all_nodes.extend(nodes)
-                        print(f"Added {len(nodes)} nodes from batch {i+1}")
-                    elif hasattr(batch_index, "index_struct") and hasattr(batch_index.index_struct, "all_nodes"):
-                        batch_nodes = list(batch_index.index_struct.all_nodes.values())
-                        all_nodes.extend(batch_nodes)
-                        print(f"Added {len(batch_nodes)} nodes from batch {i+1} (older API)")
-                    
-                    # Clean up batch index to free memory
-                    del batch_index
-                    import gc
-                    gc.collect()
-                    
-                except Exception as e:
-                    print(f"Error processing batch {i+1}: {e}")
-                    print(traceback.format_exc())
-                    # Continue with next batch
-            
-            # Now create the full index from all documents
-            print(f"Creating final index from all {len(documents)} documents")
+            # Create the index
             index = VectorStoreIndex.from_documents(documents)
-            print(f"Successfully created full index with {len(documents)} documents")
             
-            # Cache the index for later use - but do it in a way that avoids pickling issues
-            # Instead of pickling the entire index, save the essential components
-            try:
-                # Create directory for this index
-                index_dir = self.index_cache_dir / index_name
-                index_dir.mkdir(parents=True, exist_ok=True)
-                print(f"Created index directory at {index_dir}")
-                
-                # Save the documents separately - use smaller batches
-                docs_dir = index_dir / "documents"
-                docs_dir.mkdir(parents=True, exist_ok=True)
-                
-                for i, doc_batch in enumerate(batches):
-                    try:
-                        docs_path = docs_dir / f"documents_batch_{i}.pkl"
-                        with open(docs_path, "wb") as f:
-                            pickle.dump(doc_batch, f)
-                        print(f"Saved document batch {i+1} to {docs_path}")
-                    except Exception as e:
-                        print(f"Error saving document batch {i+1}: {e}")
-                        print(traceback.format_exc())
-                
-                # Save the index nodes separately
-                try:
-                    # Try the newer API
-                    if hasattr(index, "as_retriever") and hasattr(index.as_retriever(), "get_nodes"):
-                        nodes = index.as_retriever().get_nodes()
-                        print(f"Retrieved {len(nodes)} nodes from index (newer API)")
-                    elif hasattr(index, "index_struct") and hasattr(index.index_struct, "all_nodes"):
-                        # Try the older API
-                        nodes = list(index.index_struct.all_nodes.values())
-                        print(f"Retrieved {len(nodes)} nodes from index (older API)")
-                    else:
-                        # Fallback to empty nodes if we can't access them
-                        nodes = []
-                        print("Could not retrieve nodes from index - API incompatibility")
-                    
-                    # Check if nodes is not empty before saving
-                    if nodes:
-                        # Save in smaller batches
-                        nodes_dir = index_dir / "nodes"
-                        nodes_dir.mkdir(parents=True, exist_ok=True)
-                        
-                        # Split nodes into smaller batches for saving
-                        node_batch_size = min(100, max(1, len(nodes) // 5))
-                        node_batches = [nodes[i:i+node_batch_size] for i in range(0, len(nodes), node_batch_size)]
-                        
-                        for i, node_batch in enumerate(node_batches):
-                            try:
-                                nodes_path = nodes_dir / f"nodes_batch_{i}.pkl"
-                                with open(nodes_path, "wb") as f:
-                                    pickle.dump(node_batch, f)
-                                print(f"Saved nodes batch {i+1}/{len(node_batches)} to {nodes_path}")
-                            except Exception as e:
-                                print(f"Error saving nodes batch {i+1}: {e}")
-                                print(traceback.format_exc())
-                    else:
-                        print("No nodes to save - this is unusual and might indicate a problem")
-                except Exception as e:
-                    print(f"Warning: Could not save index nodes: {e}")
-                    print(traceback.format_exc())
-                
-                # Also save the index ID for reference
-                try:
-                    index_id_path = index_dir / "index_id.txt"
-                    with open(index_id_path, "w") as f:
-                        f.write(str(getattr(index, "index_id", "unknown")))
-                    print(f"Saved index ID to {index_id_path}")
-                except Exception as e:
-                    print(f"Error saving index ID: {e}")
-                
-                print(f"Created and cached index '{index_name}' with {len(documents)} documents")
-                
-                # Record in a manifest file that we've cached this index
-                try:
-                    manifest_path = self.index_cache_dir / "manifest.txt"
-                    with open(manifest_path, "a") as f:
-                        f.write(f"{index_name}\n")
-                    print(f"Updated index manifest at {manifest_path}")
-                except Exception as e:
-                    print(f"Error updating manifest: {e}")
-                    
-            except Exception as e:
-                print(f"Warning: Failed to cache index: {e}")
-                print(traceback.format_exc())
+            # Save the index to disk
+            index_path = self.index_cache_dir / index_name
+            index_path.mkdir(parents=True, exist_ok=True)
+            
+            # Save the index to disk
+            with open(index_path / "index.pkl", "wb") as f:
+                pickle.dump(index, f)
+            
+            self.logger.info(f"Index '{index_name}' created and saved successfully")
+            
+            # Also store documents in the vector database if connection is available
+            if self.db_connected:
+                self._store_documents_in_db(documents, index_name)
             
             return index
+        except Exception as e:
+            self.logger.error(f"Error creating index: {e}", exc_info=True)
+            return None
+    
+    def _store_documents_in_db(self, documents: List[Document], collection_name: str) -> bool:
+        """
+        Store documents in the vector database.
+        
+        Args:
+            documents: List of Document objects to store.
+            collection_name: Name of the collection (used as metadata).
+            
+        Returns:
+            bool: True if successful, False otherwise.
+        """
+        self.logger.info(f"Storing {len(documents)} documents in vector database under collection '{collection_name}'")
+        
+        try:
+            # Process all documents into a format for batch storage
+            db_documents = []
+            
+            for i, doc in enumerate(documents):
+                # Get document text and metadata
+                text = doc.get_content()
+                doc_id = getattr(doc, "doc_id", None) or f"{collection_name}_{i}"
+                
+                # Get document metadata or create empty dict
+                metadata = getattr(doc, "metadata", {}) or {}
+                metadata["collection"] = collection_name
+                metadata["index"] = i
+                
+                # Get embedding for the document
+                embedding = self.embedding_provider.get_embedding(text)
+                
+                # Add to batch
+                db_documents.append({
+                    "id": doc_id,
+                    "text": text,
+                    "embedding": embedding,
+                    "metadata": metadata
+                })
+            
+            # Store documents in batch
+            if hasattr(self.db_provider, "batch_store_embeddings"):
+                success = self.db_provider.batch_store_embeddings(db_documents)
+            else:
+                # Fall back to individual storage
+                success = True
+                for doc in db_documents:
+                    result = self.db_provider.store_embedding(
+                        doc_id=doc["id"],
+                        text=doc["text"],
+                        embedding=doc["embedding"],
+                        metadata=doc["metadata"]
+                    )
+                    if not result:
+                        success = False
+            
+            self.logger.info(f"{'Successfully' if success else 'Failed to'} store documents in vector database")
+            return success
             
         except Exception as e:
-            print(f"CRITICAL ERROR creating index: {e}")
-            print(traceback.format_exc())
-            
-            # Create a dummy index to return so the UI doesn't crash
-            try:
-                # Create a simple empty index as a fallback
-                print("Creating fallback empty index")
-                from llama_index.core import Document
-                fallback_doc = Document(text="Error creating index. Please try again with fewer documents.")
-                fallback_index = VectorStoreIndex.from_documents([fallback_doc])
-                print("Successfully created fallback index")
-                return fallback_index
-            except Exception as fallback_error:
-                print(f"Failed to create fallback index: {fallback_error}")
-                # Re-raise the original error if we can't even create a fallback
-                raise e
+            self.logger.error(f"Error storing documents in vector database: {e}", exc_info=True)
+            return False
     
     def load_index(self, index_name: str) -> Optional[VectorStoreIndex]:
         """
@@ -469,25 +389,59 @@ class RAGProcessor:
     
     def retrieve(self, index: VectorStoreIndex, query: str, top_k: Optional[int] = None) -> List[Any]:
         """
-        Retrieve relevant nodes from an index based on a query.
+        Retrieve relevant documents from an index.
         
         Args:
-            index: VectorStoreIndex to query.
-            query: Query string.
-            top_k: Number of results to return. If None, uses config default.
+            index: The VectorStoreIndex to query.
+            query: The query string.
+            top_k: Number of results to return. If None, uses the default.
             
         Returns:
-            List of retrieved nodes.
+            List of retrieved documents/nodes.
         """
         top_k = top_k or self.similarity_top_k
-        retriever = VectorIndexRetriever(
-            index=index,
-            similarity_top_k=top_k
-        )
         
-        nodes = retriever.retrieve(query)
-        print(f"Retrieved {len(nodes)} nodes for query: {query}")
-        return nodes
+        try:
+            # Try using the index first
+            if index:
+                self.logger.info(f"Retrieving documents for query: '{query}'")
+                retriever = VectorIndexRetriever(
+                    index=index,
+                    similarity_top_k=top_k
+                )
+                nodes = retriever.retrieve(query)
+                self.logger.info(f"Retrieved {len(nodes)} documents from index")
+                return nodes
+                
+            # Fall back to database if index is not available
+            elif self.db_connected:
+                self.logger.info(f"Index not available, falling back to database for query: '{query}'")
+                query_embedding = self.embedding_provider.get_embedding(query)
+                results = self.db_provider.search_similar(query_embedding, top_k=top_k)
+                
+                # Convert to a format similar to retriever nodes
+                nodes = []
+                for result in results:
+                    # Create a simple node-like object
+                    node = {
+                        "id": result["id"],
+                        "text": result["text"],
+                        "metadata": result["metadata"],
+                        "similarity": result["similarity"]
+                    }
+                    nodes.append(node)
+                
+                self.logger.info(f"Retrieved {len(nodes)} documents from database")
+                return nodes
+            
+            # No retrieval methods available
+            else:
+                self.logger.warning("No retrieval methods available. Index is None and database is not connected.")
+                return []
+                
+        except Exception as e:
+            self.logger.error(f"Error retrieving documents: {e}", exc_info=True)
+            return []
     
     def query(self, index: VectorStoreIndex, query: str) -> Dict[str, Any]:
         """
@@ -512,6 +466,14 @@ class RAGProcessor:
             }
         }
 
+    def __del__(self):
+        """Clean up resources when the processor is deleted."""
+        try:
+            if hasattr(self, 'db_provider') and self.db_provider:
+                self.db_provider.disconnect()
+        except Exception as e:
+            # Don't use logger here as it might be destructed already
+            print(f"Error disconnecting from database: {e}")
 
 def get_rag_processor() -> RAGProcessor:
     """
