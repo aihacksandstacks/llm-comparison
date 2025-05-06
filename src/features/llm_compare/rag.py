@@ -54,22 +54,30 @@ class RAGProcessor:
     
     def __init__(self):
         """Initialize the RAG processor."""
+        # Set up logger early so we can use it during initialization
+        self.logger = get_logger(f"{__name__}.{self.__class__.__name__}")
+        
         # Initialize the database connection
         self.db_provider = get_db_provider()
         self.db_connected = self.db_provider.connect()
         
-        if not self.db_connected:
-            self.logger.warning("Database connection failed. Some features may not work properly.")
+        # Set storage preference flag - database is now preferred
+        self.use_db_as_primary = True
+        
+        if self.db_connected:
+            self.logger.info("Successfully connected to vector database - using as primary storage")
+        else:
+            self.logger.warning("Database connection failed. Falling back to in-memory storage only.")
         
         # Get embedding provider from app if available or create new one
         import streamlit as st
         if hasattr(st, 'session_state') and 'embedding_provider' in st.session_state and st.session_state.embedding_provider is not None:
             self.embedding_provider = st.session_state.embedding_provider
-            print("Using embedding provider from session state")
+            self.logger.info("Using embedding provider from session state")
         else:
             # Fallback to creating a new one 
             self.embedding_provider = get_embedding_provider()
-            print("Created new embedding provider")
+            self.logger.info("Created new embedding provider")
         
         # Default prompt template
         self.DEFAULT_PROMPT_TEMPLATE = (
@@ -90,26 +98,23 @@ class RAGProcessor:
         self.index_cache_dir = Path(CACHE_DIR) / "indices"
         self.index_cache_dir.mkdir(parents=True, exist_ok=True)
         
-        # Set up logger
-        self.logger = get_logger(f"{__name__}.{self.__class__.__name__}")
-        
         # Setup llama_index with our embedding provider
         self._setup_llama_index()
     
     def _setup_llama_index(self):
         """Configure llama_index with custom embedding model."""
-        print("Setting up llama_index with custom embedding model")
+        self.logger.info("Setting up llama_index with custom embedding model")
         
         # Try patching the OpenAIEmbedding class directly
         try:
             # Try importing from the new location first
             try:
                 from llama_index.embeddings.openai import OpenAIEmbedding
-                print("Imported OpenAIEmbedding from llama_index.embeddings.openai")
+                self.logger.info("Imported OpenAIEmbedding from llama_index.embeddings.openai")
             except ImportError:
                 # Fall back to older location
                 from llama_index.core.embeddings.openai import OpenAIEmbedding
-                print("Imported OpenAIEmbedding from llama_index.core.embeddings.openai")
+                self.logger.info("Imported OpenAIEmbedding from llama_index.core.embeddings.openai")
             
             # Create an instance to use with patched methods
             embed_model = OpenAIEmbedding(model="text-embedding-3-small", api_key="dummy")
@@ -124,15 +129,15 @@ class RAGProcessor:
             
             # Replace the embedding methods with our versions that use our provider
             def _monkey_get_query_embedding(self, query):
-                print(f"Using custom embedding for query: {query[:20]}...")
+                self.logger.debug(f"Using custom embedding for query: {query[:20]}...")
                 return provider.get_embedding(query)
             
             def _monkey_get_text_embedding(self, text):
-                print(f"Using custom embedding for text: {text[:20]}...")
+                self.logger.debug(f"Using custom embedding for text: {text[:20]}...")
                 return provider.get_embedding(text)
                 
             def _monkey_get_text_embeddings(self, texts):
-                print(f"Using custom embeddings for {len(texts)} texts")
+                self.logger.debug(f"Using custom embeddings for {len(texts)} texts")
                 return provider.get_embeddings(texts)
             
             # Patch the instance methods directly
@@ -143,15 +148,15 @@ class RAGProcessor:
             
             # Also define the async methods to call our sync methods
             async def _monkey_aget_query_embedding(self, query):
-                print(f"Using async custom embedding for query: {query[:20]}...")
+                self.logger.debug(f"Using async custom embedding for query: {query[:20]}...")
                 return provider.get_embedding(query)
                 
             async def _monkey_aget_text_embedding(self, text):
-                print(f"Using async custom embedding for text: {text[:20]}...")
+                self.logger.debug(f"Using async custom embedding for text: {text[:20]}...")
                 return provider.get_embedding(text)
                 
             async def _monkey_aget_text_embeddings(self, texts):
-                print(f"Using async custom embeddings for {len(texts)} texts")
+                self.logger.debug(f"Using async custom embeddings for {len(texts)} texts")
                 return provider.get_embeddings(texts)
             
             # Patch the async methods
@@ -159,10 +164,10 @@ class RAGProcessor:
             embed_model._aget_text_embedding = types.MethodType(_monkey_aget_text_embedding, embed_model)
             embed_model._aget_text_embeddings = types.MethodType(_monkey_aget_text_embeddings, embed_model)
             
-            print("Successfully patched OpenAIEmbedding methods")
+            self.logger.info("Successfully patched OpenAIEmbedding methods")
             
         except Exception as e:
-            print(f"Error setting up custom embedding model: {e}")
+            self.logger.error(f"Error setting up custom embedding model: {e}", exc_info=True)
             # If we can't patch OpenAIEmbedding, fall back to direct function
             from llama_index.core.embeddings import resolve_embed_model
             
@@ -171,11 +176,11 @@ class RAGProcessor:
                 return self.embedding_provider.get_embedding(text)
             
             embed_model = get_embedding_func
-            print("Using simple embedding function as fallback")
+            self.logger.info("Using simple embedding function as fallback")
         
         # Set up global llama_index settings
         Settings.embed_model = embed_model
-        print(f"Set embed_model to {embed_model}")
+        self.logger.info(f"Set embed_model to {embed_model}")
         
         Settings.chunk_size = self.chunk_size
         Settings.chunk_overlap = self.chunk_overlap
@@ -183,7 +188,7 @@ class RAGProcessor:
             chunk_size=self.chunk_size,
             chunk_overlap=self.chunk_overlap
         )
-        print("Llama_index settings configured successfully")
+        self.logger.info("Llama_index settings configured successfully")
     
     def load_documents_from_directory(self, directory: str) -> List[Document]:
         """
@@ -199,10 +204,10 @@ class RAGProcessor:
             directory_path = Path(directory)
             reader = SimpleDirectoryReader(input_dir=str(directory_path))
             documents = reader.load_data()
-            print(f"Loaded {len(documents)} documents from {directory}")
+            self.logger.info(f"Loaded {len(documents)} documents from {directory}")
             return documents
         except Exception as e:
-            print(f"Error loading documents from {directory}: {e}")
+            self.logger.error(f"Error loading documents from {directory}: {e}", exc_info=True)
             return []
     
     def load_documents_from_files(self, file_paths: List[str]) -> List[Document]:
@@ -218,15 +223,15 @@ class RAGProcessor:
         try:
             reader = SimpleDirectoryReader(input_files=file_paths)
             documents = reader.load_data()
-            print(f"Loaded {len(documents)} documents from {len(file_paths)} files")
+            self.logger.info(f"Loaded {len(documents)} documents from {len(file_paths)} files")
             return documents
         except Exception as e:
-            print(f"Error loading documents from files: {e}")
+            self.logger.error(f"Error loading documents from files: {e}", exc_info=True)
             return []
     
     def create_index(self, documents: List[Document], index_name: str) -> VectorStoreIndex:
         """
-        Create a new index from documents and save it to disk.
+        Create a new index from documents, prioritizing database storage.
         
         Args:
             documents: List of Document objects to index.
@@ -238,22 +243,27 @@ class RAGProcessor:
         try:
             self.logger.info(f"Creating index '{index_name}' with {len(documents)} documents")
             
-            # Create the index
+            # Store documents in the vector database first if connection is available
+            db_success = False
+            if self.db_connected:
+                self.logger.info("Storing documents in database as primary storage")
+                db_success = self._store_documents_in_db(documents, index_name)
+                if db_success:
+                    self.logger.info("Documents successfully stored in database")
+                else:
+                    self.logger.warning("Failed to store documents in database, falling back to in-memory index")
+            
+            # Also create an in-memory index as a fallback
             index = VectorStoreIndex.from_documents(documents)
             
-            # Save the index to disk
+            # Save the index to disk for persistence between sessions
             index_path = self.index_cache_dir / index_name
             index_path.mkdir(parents=True, exist_ok=True)
             
-            # Save the index to disk
             with open(index_path / "index.pkl", "wb") as f:
                 pickle.dump(index, f)
             
-            self.logger.info(f"Index '{index_name}' created and saved successfully")
-            
-            # Also store documents in the vector database if connection is available
-            if self.db_connected:
-                self._store_documents_in_db(documents, index_name)
+            self.logger.info(f"In-memory index '{index_name}' created and saved to disk as backup")
             
             return index
         except Exception as e:
@@ -331,12 +341,12 @@ class RAGProcessor:
         Returns:
             VectorStoreIndex object or None if not found.
         """
-        print(f"Attempting to load index '{index_name}' from cache")
+        self.logger.info(f"Attempting to load index '{index_name}' from cache")
         
         # Check if we have a directory for this index
         index_dir = self.index_cache_dir / index_name
         if not index_dir.exists() or not index_dir.is_dir():
-            print(f"Index '{index_name}' not found in cache")
+            self.logger.info(f"Index '{index_name}' not found in cache")
             return None
         
         try:
@@ -366,19 +376,19 @@ class RAGProcessor:
                         with open(doc_file, "rb") as f:
                             doc_batch = pickle.load(f)
                             all_documents.extend(doc_batch)
-                        print(f"Loaded {len(doc_batch)} documents from {doc_file}")
+                        self.logger.info(f"Loaded {len(doc_batch)} documents from {doc_file}")
                     except Exception as e:
-                        print(f"Error loading documents from {doc_file}: {e}")
+                        self.logger.error(f"Error loading documents from {doc_file}: {e}", exc_info=True)
                 
                 # Check if we found any documents
                 if all_documents:
                     # Recreate the index from documents
-                    print(f"Recreating index from {len(all_documents)} loaded documents")
+                    self.logger.info(f"Recreating index from {len(all_documents)} loaded documents")
                     index = VectorStoreIndex.from_documents(all_documents)
-                    print(f"Successfully recreated index '{index_name}' from cache")
+                    self.logger.info(f"Successfully recreated index '{index_name}' from cache")
                     return index
                 else:
-                    print(f"No documents found for index '{index_name}' in cache")
+                    self.logger.info(f"No documents found for index '{index_name}' in cache")
                     return None
             else:
                 # Try loading from legacy single file format as fallback
@@ -388,17 +398,15 @@ class RAGProcessor:
                         documents = pickle.load(f)
                     
                     if isinstance(documents, list) and documents:
-                        print(f"Loaded {len(documents)} documents from legacy cache format")
+                        self.logger.info(f"Loaded {len(documents)} documents from legacy cache format")
                         index = VectorStoreIndex.from_documents(documents)
-                        print(f"Successfully recreated index '{index_name}' from legacy cache")
+                        self.logger.info(f"Successfully recreated index '{index_name}' from legacy cache")
                         return index
                 
-                print(f"Documents for index '{index_name}' not found in cache")
+                self.logger.info(f"Documents for index '{index_name}' not found in cache")
                 return None
         except Exception as e:
-            print(f"Error loading index '{index_name}' from cache: {e}")
-            import traceback
-            print(traceback.format_exc())
+            self.logger.error(f"Error loading index '{index_name}' from cache: {e}", exc_info=True)
             return None
     
     def retrieve(self, index: VectorStoreIndex, query: str, top_k: Optional[int] = None) -> List[Any]:
@@ -406,7 +414,7 @@ class RAGProcessor:
         Retrieve relevant documents from an index.
         
         Args:
-            index: The VectorStoreIndex to query.
+            index: The VectorStoreIndex to query (used as fallback).
             query: The query string.
             top_k: Number of results to return. If None, uses the default.
             
@@ -416,42 +424,45 @@ class RAGProcessor:
         top_k = top_k or self.similarity_top_k
         
         try:
-            # Try using the index first
+            # Try using the database first if connected
+            if self.db_connected:
+                self.logger.info(f"Retrieving documents from database for query: '{query}'")
+                query_embedding = self.embedding_provider.get_embedding(query)
+                results = self.db_provider.search_similar(query_embedding, top_k=top_k)
+                
+                # If we got results from the database, use them
+                if results:
+                    # Convert to a format similar to retriever nodes
+                    nodes = []
+                    for result in results:
+                        # Create a simple node-like object
+                        node = {
+                            "id": result["id"],
+                            "text": result["text"],
+                            "metadata": result["metadata"],
+                            "similarity": result["similarity"]
+                        }
+                        nodes.append(node)
+                    
+                    self.logger.info(f"Retrieved {len(nodes)} documents from database")
+                    return nodes
+                else:
+                    self.logger.info("No results from database, falling back to in-memory index")
+                
+            # Fall back to in-memory index if database not available or no results
             if index:
-                self.logger.info(f"Retrieving documents for query: '{query}'")
+                self.logger.info(f"Retrieving documents from in-memory index for query: '{query}'")
                 retriever = VectorIndexRetriever(
                     index=index,
                     similarity_top_k=top_k
                 )
                 nodes = retriever.retrieve(query)
-                self.logger.info(f"Retrieved {len(nodes)} documents from index")
-                return nodes
-                
-            # Fall back to database if index is not available
-            elif self.db_connected:
-                self.logger.info(f"Index not available, falling back to database for query: '{query}'")
-                query_embedding = self.embedding_provider.get_embedding(query)
-                results = self.db_provider.search_similar(query_embedding, top_k=top_k)
-                
-                # Convert to a format similar to retriever nodes
-                nodes = []
-                for result in results:
-                    # Create a simple node-like object
-                    node = {
-                        "id": result["id"],
-                        "text": result["text"],
-                        "metadata": result["metadata"],
-                        "similarity": result["similarity"]
-                    }
-                    nodes.append(node)
-                
-                self.logger.info(f"Retrieved {len(nodes)} documents from database")
+                self.logger.info(f"Retrieved {len(nodes)} documents from in-memory index")
                 return nodes
             
             # No retrieval methods available
-            else:
-                self.logger.warning("No retrieval methods available. Index is None and database is not connected.")
-                return []
+            self.logger.warning("No retrieval methods available. Database returned no results and in-memory index is not available.")
+            return []
                 
         except Exception as e:
             self.logger.error(f"Error retrieving documents: {e}", exc_info=True)
@@ -459,25 +470,23 @@ class RAGProcessor:
     
     def query(self, index: VectorStoreIndex, query: str) -> Dict[str, Any]:
         """
-        Query an index and return the result and context.
+        Query for information and return the result and context.
         
         Args:
-            index: VectorStoreIndex to query.
+            index: VectorStoreIndex to query (used as fallback).
             query: Query string.
             
         Returns:
             Dictionary with response and context information.
         """
-        # Check if the index is None before trying to use it
-        if index is None:
-            self.logger.error("Cannot query: index is None")
-            # Try to fall back to database search if available
+        try:
+            # Try using the database first if connected
             if self.db_connected:
-                self.logger.info(f"Falling back to database search for: '{query}'")
+                self.logger.info(f"Querying database for: '{query}'")
                 query_embedding = self.embedding_provider.get_embedding(query)
                 results = self.db_provider.search_similar(query_embedding, top_k=self.similarity_top_k)
                 
-                # Format the results as a response
+                # If we got results from the database, use them
                 if results:
                     # Extract text from results
                     context_texts = [result["text"] for result in results]
@@ -492,10 +501,29 @@ class RAGProcessor:
                             "from_database": True
                         }
                     }
+                else:
+                    self.logger.info("No results from database, falling back to in-memory index")
             
-            # If no database or no results, return an error response
+            # Fall back to in-memory index if database not available or no results
+            if index:
+                self.logger.info(f"Querying in-memory index for: '{query}'")
+                query_engine = index.as_query_engine()
+                response = query_engine.query(query)
+                
+                return {
+                    "response": str(response),
+                    "source_nodes": response.source_nodes,
+                    "metadata": {
+                        "query": query,
+                        "node_count": len(response.source_nodes),
+                        "from_memory": True
+                    }
+                }
+            
+            # No query methods available
+            self.logger.warning("Query failed. Database returned no results and in-memory index is not available.")
             return {
-                "response": "Error: No index available for query.",
+                "response": "Error: No data sources available for query.",
                 "source_nodes": [],
                 "metadata": {
                     "query": query,
@@ -503,19 +531,19 @@ class RAGProcessor:
                     "error": True
                 }
             }
-            
-        # Normal flow with valid index
-        query_engine = index.as_query_engine()
-        response = query_engine.query(query)
-        
-        return {
-            "response": str(response),
-            "source_nodes": response.source_nodes,
-            "metadata": {
-                "query": query,
-                "node_count": len(response.source_nodes)
+                
+        except Exception as e:
+            self.logger.error(f"Error processing query: {e}", exc_info=True)
+            return {
+                "response": f"Error processing query: {str(e)}",
+                "source_nodes": [],
+                "metadata": {
+                    "query": query,
+                    "node_count": 0,
+                    "error": True,
+                    "error_message": str(e)
+                }
             }
-        }
 
     def __del__(self):
         """Clean up resources when the processor is deleted."""
@@ -524,7 +552,7 @@ class RAGProcessor:
                 self.db_provider.disconnect()
         except Exception as e:
             # Don't use logger here as it might be destructed already
-            print(f"Error disconnecting from database: {e}")
+            self.logger.error(f"Error disconnecting from database: {e}", exc_info=True)
 
 def get_rag_processor() -> RAGProcessor:
     """
