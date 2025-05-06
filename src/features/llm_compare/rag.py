@@ -340,6 +340,20 @@ class RAGProcessor:
             return None
         
         try:
+            # First try loading the index directly from the index.pkl file
+            index_file = index_dir / "index.pkl"
+            if index_file.exists():
+                try:
+                    self.logger.info(f"Found index.pkl for '{index_name}', loading directly")
+                    with open(index_file, "rb") as f:
+                        index = pickle.load(f)
+                    self.logger.info(f"Successfully loaded index '{index_name}' directly from index.pkl")
+                    return index
+                except Exception as e:
+                    self.logger.warning(f"Failed to load index from {index_file}: {e}")
+                    # Continue to fallback methods below
+            
+            # If we didn't succeed with direct loading, try reconstructing from documents
             # Load documents
             docs_dir = index_dir / "documents"
             if docs_dir.exists() and docs_dir.is_dir():
@@ -454,12 +468,49 @@ class RAGProcessor:
         Returns:
             Dictionary with response and context information.
         """
+        # Check if the index is None before trying to use it
+        if index is None:
+            self.logger.error("Cannot query: index is None")
+            # Try to fall back to database search if available
+            if self.db_connected:
+                self.logger.info(f"Falling back to database search for: '{query}'")
+                query_embedding = self.embedding_provider.get_embedding(query)
+                results = self.db_provider.search_similar(query_embedding, top_k=self.similarity_top_k)
+                
+                # Format the results as a response
+                if results:
+                    # Extract text from results
+                    context_texts = [result["text"] for result in results]
+                    context = "\n\n".join(context_texts)
+                    
+                    return {
+                        "response": context,
+                        "source_nodes": results,
+                        "metadata": {
+                            "query": query,
+                            "node_count": len(results),
+                            "from_database": True
+                        }
+                    }
+            
+            # If no database or no results, return an error response
+            return {
+                "response": "Error: No index available for query.",
+                "source_nodes": [],
+                "metadata": {
+                    "query": query,
+                    "node_count": 0,
+                    "error": True
+                }
+            }
+            
+        # Normal flow with valid index
         query_engine = index.as_query_engine()
         response = query_engine.query(query)
         
         return {
             "response": str(response),
-            "nodes": response.source_nodes,
+            "source_nodes": response.source_nodes,
             "metadata": {
                 "query": query,
                 "node_count": len(response.source_nodes)
