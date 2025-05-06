@@ -808,42 +808,42 @@ elif page == "RAG Query":
                             st.success("✅ Context retrieved successfully")
                             with st.expander("Retrieved Context", expanded=True):
                                 st.markdown(context)
-                                
-                                # Show source information if available
-                                if source_nodes:
-                                    st.subheader("Sources")
-                                    for i, node in enumerate(source_nodes[:similarity_top_k]):
-                                        source_score = node.get("score", 0) if isinstance(node, dict) else getattr(node, "score", 0)
-                                        source_text = node.get("text", "") if isinstance(node, dict) else getattr(node, "text", "")
-                                        source_doc = node.get("document", {}) if isinstance(node, dict) else getattr(node, "document", {})
-                                        
-                                        # Get metadata
-                                        metadata = source_doc.get("metadata", {}) if isinstance(source_doc, dict) else getattr(source_doc, "metadata", {})
-                                        
-                                        with st.expander(f"Source {i+1} - Relevance: {source_score:.4f}", expanded=i==0):
-                                            # Show source type with icon
-                                            if metadata.get("source") == "crawl":
-                                                st.markdown(f"🌐 **Web Page**: {metadata.get('url', 'Unknown URL')}")
-                                                if metadata.get("title"):
-                                                    st.markdown(f"**Title**: {metadata.get('title')}")
-                                            elif metadata.get("source") == "file":
-                                                file_icon = "📄"
-                                                if metadata.get("file_path", "").endswith((".pdf", ".PDF")):
-                                                    file_icon = "📊"
-                                                elif metadata.get("file_path", "").endswith((".md", ".MD")):
-                                                    file_icon = "📝"
-                                                
-                                                st.markdown(f"{file_icon} **File**: {metadata.get('file_path', 'Unknown file')}")
-                                                if metadata.get("page_number"):
-                                                    st.markdown(f"**Page**: {metadata.get('page_number')}")
-                                            elif metadata.get("source") == "code":
-                                                st.markdown(f"💻 **Code**: {metadata.get('file_path', 'Unknown file')}")
-                                                if metadata.get("language"):
-                                                    st.markdown(f"**Language**: {metadata.get('language')}")
+                            
+                            # Show source information if available - now outside the context expander
+                            if source_nodes:
+                                st.subheader("Sources")
+                                for i, node in enumerate(source_nodes[:similarity_top_k]):
+                                    source_score = node.get("score", 0) if isinstance(node, dict) else getattr(node, "score", 0)
+                                    source_text = node.get("text", "") if isinstance(node, dict) else getattr(node, "text", "")
+                                    source_doc = node.get("document", {}) if isinstance(node, dict) else getattr(node, "document", {})
+                                    
+                                    # Get metadata
+                                    metadata = source_doc.get("metadata", {}) if isinstance(source_doc, dict) else getattr(source_doc, "metadata", {})
+                                    
+                                    with st.expander(f"Source {i+1} - Relevance: {source_score:.4f}", expanded=i==0):
+                                        # Show source type with icon
+                                        if metadata.get("source") == "crawl":
+                                            st.markdown(f"🌐 **Web Page**: {metadata.get('url', 'Unknown URL')}")
+                                            if metadata.get("title"):
+                                                st.markdown(f"**Title**: {metadata.get('title')}")
+                                        elif metadata.get("source") == "file":
+                                            file_icon = "📄"
+                                            if metadata.get("file_path", "").endswith((".pdf", ".PDF")):
+                                                file_icon = "📊"
+                                            elif metadata.get("file_path", "").endswith((".md", ".MD")):
+                                                file_icon = "📝"
                                             
-                                            # Show the text snippet
-                                            st.markdown("**Content:**")
-                                            st.markdown(source_text)
+                                            st.markdown(f"{file_icon} **File**: {metadata.get('file_path', 'Unknown file')}")
+                                            if metadata.get("page_number"):
+                                                st.markdown(f"**Page**: {metadata.get('page_number')}")
+                                        elif metadata.get("source") == "code":
+                                            st.markdown(f"💻 **Code**: {metadata.get('file_path', 'Unknown file')}")
+                                            if metadata.get("language"):
+                                                st.markdown(f"**Language**: {metadata.get('language')}")
+                                        
+                                        # Show the text snippet
+                                        st.markdown("**Content:**")
+                                        st.markdown(source_text)
                             
                             # Create a prompt from template
                             prompt = user_prompt_template.replace("{context}", context).replace("{question}", query)
