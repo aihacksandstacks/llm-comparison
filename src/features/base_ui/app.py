@@ -695,6 +695,38 @@ elif page == "Model Selection":
 elif page == "RAG Query":
     st.header("RAG Query Testing")
     
+    # Get RAG processor for potential database operations
+    rag_processor = get_rag_processor()
+    
+    # Check if we need to load collections from the database
+    if not st.session_state.indices and rag_processor.db_connected:
+        with st.spinner("Checking database for available collections..."):
+            try:
+                # Get collections from the database
+                collections = rag_processor.db_provider.get_collections()
+                
+                if collections:
+                    st.info(f"Found {len(collections)} collections in the database")
+                    
+                    # Let the user select collections to load
+                    selected_collections = st.multiselect(
+                        "Select collections to load from database",
+                        options=collections,
+                        default=collections[:1] if collections else []
+                    )
+                    
+                    if selected_collections and st.button("Load Selected Collections"):
+                        with st.spinner("Loading collections from database..."):
+                            for collection_name in selected_collections:
+                                # Create a dummy index for database access
+                                # This helps maintain the same UI flow
+                                st.session_state.indices[collection_name] = None
+                            
+                            st.success(f"Loaded {len(selected_collections)} collections from database")
+                            st.rerun()  # Refresh the page to show the loaded collections
+            except Exception as e:
+                st.error(f"Error loading collections from database: {str(e)}")
+    
     # Select an index
     if st.session_state.indices:
         index_names = list(st.session_state.indices.keys())

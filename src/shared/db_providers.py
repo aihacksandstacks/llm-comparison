@@ -95,6 +95,15 @@ class DBProvider:
             bool: True if successful, False otherwise.
         """
         raise NotImplementedError("Subclasses must implement delete_embedding()")
+        
+    def get_collections(self) -> List[str]:
+        """
+        Get a list of all available collections in the database.
+        
+        Returns:
+            List[str]: List of collection names.
+        """
+        raise NotImplementedError("Subclasses must implement get_collections()")
 
 
 class PostgresVectorProvider(DBProvider):
@@ -508,6 +517,46 @@ class PostgresVectorProvider(DBProvider):
         except Exception as e:
             self.logger.error(f"Error counting embeddings in PostgreSQL: {e}")
             return -1
+            
+    def get_collections(self) -> List[str]:
+        """
+        Get a list of all available collections in the database.
+        
+        Returns:
+            List[str]: List of collection names.
+        """
+        if not self.engine:
+            self.logger.error("Database connection not established")
+            return []
+            
+        try:
+            self.logger.info("Querying database for available collections")
+            
+            # Query for unique collection names in the metadata
+            with self.engine.connect() as conn:
+                query = sql_text("""
+                SELECT DISTINCT 
+                    CASE 
+                        WHEN metadata ? 'collection' THEN metadata->>'collection'
+                        ELSE 'default'
+                    END as collection_name
+                FROM 
+                    embeddings
+                ORDER BY 
+                    collection_name
+                """)
+                
+                results = conn.execute(query).fetchall()
+                
+                # Extract collection names from results
+                collections = [row[0] for row in results if row[0]]
+                
+                self.logger.info(f"Found {len(collections)} collections in database")
+                return collections
+                
+        except Exception as e:
+            self.logger.error(f"Error getting collections from PostgreSQL: {e}", exc_info=True)
+            return []
 
 
 class SupabaseProvider(DBProvider):
@@ -672,6 +721,54 @@ class SupabaseProvider(DBProvider):
         except Exception as e:
             self.logger.error(f"Error searching similar documents in Supabase: {e}", exc_info=True)
             return []
+    
+    def get_collections(self) -> List[str]:
+        """
+        Get a list of all available collections in the database.
+        
+        Returns:
+            List[str]: List of collection names.
+        """
+        try:
+            self.logger.info("Querying Supabase for available collections")
+            
+            # Execute a query to get unique collections from metadata
+            response = self.client.post(
+                "/rest/v1/rpc/get_collections",
+                json={}
+            )
+            response.raise_for_status()
+            
+            collections = response.json()
+            self.logger.info(f"Found {len(collections)} collections in Supabase")
+            return collections
+            
+        except Exception as e:
+            self.logger.error(f"Error getting collections from Supabase: {e}", exc_info=True)
+            # Fall back to a direct query approach
+            try:
+                response = self.client.get(
+                    f"/rest/v1/{self.table}",
+                    params={
+                        "select": "metadata->collection"
+                    }
+                )
+                response.raise_for_status()
+                
+                results = response.json()
+                # Extract unique collection names
+                collections = list(set(
+                    item.get("metadata", {}).get("collection") 
+                    for item in results 
+                    if item.get("metadata", {}).get("collection")
+                ))
+                
+                self.logger.info(f"Found {len(collections)} collections in Supabase (fallback method)")
+                return collections
+                
+            except Exception as fallback_error:
+                self.logger.error(f"Error in fallback method for getting collections: {fallback_error}", exc_info=True)
+                return []
 
 
 def get_db_provider() -> DBProvider:
