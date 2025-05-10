@@ -2,7 +2,7 @@ embeddings:
   batch_size: 32
   cache_enabled: true
   dimension: 768
-  model: nomic-ai/nomic-embed-text-v1
+  model: nomic-ai/nomic-embed-text-v1.5
   provider: nomic_local
   task_type: search_document
 evaluation:
